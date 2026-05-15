@@ -2,3 +2,12 @@
 .claude/
 .DS_Store
 node_modules/
+
+# opencode scratch / data-import artifacts
+*.mjs
+*.sql
+recipes-fetched.json
+recipes-progress.json
+opencode.json
+package.json
+package-lock.json

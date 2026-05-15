@@ -207,6 +207,8 @@ function TabBtn({ t, active, onClick, p }) {
 // Match indicator — three variants (Tweakable)
 // ─────────────────────────────────────────────────────────────
 function MatchIndicator({ have, total, missing, style, p, size = 'sm' }) {
+  // If a recipe has no ingredients recorded, don't try to compute a match — skip rendering.
+  if (!total || total <= 0) return null;
   const pct = Math.round((have / total) * 100);
   const c = pct >= 90 ? p.sage : pct >= 60 ? p.warning : p.danger;
   const px = size === 'lg' ? 13 : 11;
