@@ -1,0 +1,14 @@
+{
+  "name": "Pantry Pal",
+  "short_name": "Pantry Pal",
+  "description": "Cook from what's already in your pantry.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5EDE2",
+  "theme_color": "#C7634A",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
