@@ -13,82 +13,18 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const p = PALETTES[t.palette] || PALETTES.terracotta;
+  const [session, setSession] = useStateA(undefined); // undefined=loading, null=signed-out
 
-  const data = window.PANTRY_PAL_DATA;
-  const [pantry, setPantry] = useStateA(data.pantry);
-  const pantryIds = useMemoA(() => new Set(pantry.map(i => i.id)), [pantry]);
-  const [cookedDays, setCookedDays] = useStateA([true, true, false, true, true, false, false]);
-
-  // route stack: { name, args }
-  const [stack, setStack] = useStateA(t.showOnboarding ? [{ name: 'onboarding' }] : [{ name: 'home' }]);
-  const top = stack[stack.length - 1];
-
-  const navigate = (name, arg) => {
-    if (name === 'back') {
-      setStack(s => s.length > 1 ? s.slice(0, -1) : s);
-      return;
-    }
-    // tabs reset stack
-    if (['home', 'pantry', 'browse', 'profile'].includes(name)) {
-      setStack([{ name }]);
-    } else {
-      setStack(s => [...s, { name, arg }]);
-    }
-  };
-
-  // Add sheet — mode 'add' (default) or 'grocery'
-  const [addSheet, setAddSheet] = useStateA(null);   // null | 'add' | 'grocery'
-  const [showCook, setShowCook] = useStateA(null);
-
-  const openAdd = (mode = 'add') => setAddSheet(mode);
-
-  const onAddItems = (items, mode = 'inventory') => {
-    const newOnes = items.map((it, i) => {
-      // honor user-spoken expiring cues ("looking sad", "almost gone") via the item.tag
-      const explicitlyExpiring = it.tag === 'expiring';
-      const fresh = explicitlyExpiring ? 0.3 : freshnessFor(it.name, mode);
-      return {
-        id: `added-${Date.now()}-${i}`, name: it.name, qty: it.qty, said: it.said,
-        cat: guessCatFromName(it.name), loc: guessLocFromName(it.name),
-        fresh, expiring: explicitlyExpiring || fresh < 0.45,
-        added: 'just now',
-      };
+  useEffectA(() => {
+    let mounted = true;
+    window.PP.sb.auth.getSession().then(({ data }) => {
+      if (mounted) setSession(data.session ?? null);
     });
-    setPantry(pp => [...pp, ...newOnes]);
-  };
-  const onRemove = (id) => setPantry(pp => pp.filter(i => i.id !== id));
-
-  const activeTab = ['home', 'pantry', 'browse', 'profile'].includes(top.name) ? top.name : null;
-
-  const liveData = { ...data, pantry };
-
-  // route screen
-  let screen;
-  if (top.name === 'onboarding') {
-    screen = <Onboarding p={p} onFinish={(items) => {
-      // append the items the user just talked through, with onboarding freshness
-      if (items && items.length) onAddItems(items, 'onboarding');
-      setStack([{ name: 'home' }]);
-    }} />;
-  } else if (top.name === 'home') {
-    screen = <HomeScreen p={p} t={t} data={liveData} pantryIds={pantryIds}
-              navigate={navigate} cookedDays={cookedDays}
-              onGrocery={() => openAdd('grocery')} />;
-  } else if (top.name === 'pantry') {
-    screen = <PantryScreen p={p} data={liveData} navigate={navigate} onRemove={onRemove} />;
-  } else if (top.name === 'browse') {
-    screen = <BrowseScreen p={p} t={t} data={liveData} pantryIds={pantryIds} navigate={navigate} />;
-  } else if (top.name === 'profile') {
-    screen = <ProfileScreen p={p} data={liveData} navigate={navigate}
-              onShop={() => navigate('shopping')} />;
-  } else if (top.name === 'settings') {
-    screen = <SettingsScreen p={p} navigate={navigate} />;
-  } else if (top.name === 'shopping') {
-    screen = <ShoppingScreen p={p} data={liveData} pantryIds={pantryIds} navigate={navigate} />;
-  } else if (top.name === 'recipe') {
-    screen = <RecipeDetailScreen p={p} t={t} data={liveData} pantryIds={pantryIds}
-              recipeId={top.arg} navigate={navigate} onCook={(id) => setShowCook(id)} />;
-  }
+    const { data: { subscription } } = window.PP.onAuthChange(s => {
+      if (mounted) setSession(s ?? null);
+    });
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, []);
 
   return (
     <div style={{
@@ -97,35 +33,9 @@ function App() {
       fontFamily: '"DM Sans", system-ui, sans-serif',
       WebkitFontSmoothing: 'antialiased',
     }}>
-      <div data-screen-label={`screen-${top.name}`} style={{
-        position: 'absolute', left: 0, right: 0,
-        top: 'env(safe-area-inset-top)', bottom: 0,
-        overflowY: 'auto',
-      }}>
-        {screen}
-      </div>
-
-      {/* Tab bar — hidden during onboarding and full-screen cooking */}
-      {top.name !== 'onboarding' && (
-        <TabBar active={activeTab || 'home'}
-          onChange={navigate}
-          onAdd={() => openAdd('add')} p={p} />
-      )}
-
-      {addSheet && (
-        <AddChatScreen p={p} mode={addSheet}
-          onClose={() => setAddSheet(null)}
-          onAdd={(items) => onAddItems(items, addSheet)} />
-      )}
-      {showCook && (
-        <CookScreen p={p} data={liveData} recipeId={showCook}
-          navigate={navigate}
-          onFinish={() => {
-            setShowCook(null);
-            const day = (new Date().getDay() + 6) % 7; // mon=0
-            setCookedDays(d => d.map((v, i) => i === day ? true : v));
-          }} />
-      )}
+      {session === undefined ? <Splash p={p} />
+       : session === null ? <AuthScreen p={p} />
+       : <AuthedApp p={p} t={t} setTweak={setTweak} session={session} />}
 
       <TweaksPanel>
         <TweakSection label="Layout" />
@@ -155,58 +65,207 @@ function App() {
             { value: 'plum', label: 'Plum' },
           ]}
           onChange={v => setTweak('palette', v)} />
-        <TweakSection label="Demo" />
-        <TweakButton label="Replay onboarding"
-          onClick={() => { setPantry([]); setStack([{ name: 'onboarding' }]); }} />
-        <TweakButton label="Open shopping list"
-          onClick={() => setStack([{ name: 'shopping' }])} />
-        <TweakButton label="Try cook-along"
-          onClick={() => setShowCook(data.recipes[0].id)} /></TweaksPanel>
+        <TweakSection label="Account" />
+        <TweakButton label="Sign out" onClick={() => window.PP.signOut()} />
+      </TweaksPanel>
     </div>
   );
 }
 
-function guessCatFromName(name) {
-  const lower = name.toLowerCase();
-  if (['carrot', 'onion', 'spinach', 'lemon', 'cilantro', 'tomato', 'ginger', 'garlic'].some(k => lower.includes(k))) return 'Produce';
-  if (['chicken', 'egg', 'tofu', 'beef', 'pork', 'fish'].some(k => lower.includes(k))) return 'Protein';
-  if (['rice', 'pasta', 'penne', 'bread', 'tortilla'].some(k => lower.includes(k))) return 'Grains';
-  if (['yogurt', 'milk', 'butter', 'cheese', 'parmesan', 'cream'].some(k => lower.includes(k))) return 'Dairy';
-  if (['oil', 'sauce', 'vinegar'].some(k => lower.includes(k))) return 'Pantry';
-  return 'Pantry';
+function Splash({ p }) {
+  return (
+    <div style={{
+      width: '100%', height: '100%', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', background: p.paper,
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 999, border: `3px solid ${p.line}`,
+        borderTopColor: p.accent, animation: 'spin 0.8s linear infinite',
+      }} />
+    </div>
+  );
 }
 
-// Shelf-stable items keep their freshness regardless of how long they've sat.
-// Everything else added in onboarding is conservatively "use soon" — because if
-// it was *already* in the kitchen, it's been there for a while.
-const SHELF_STABLE = [
-  'rice', 'pasta', 'penne', 'flour', 'sugar', 'oil', 'vinegar', 'soy',
-  'salt', 'pepper', 'cumin', 'paprika', 'cinnamon', 'oregano', 'basil',
-  'chili', 'spice', 'honey', 'maple', 'can', 'jar', 'chickpea', 'lentil',
-  'bean', 'tortilla', 'cracker', 'cereal',
-];
-function isShelfStable(name) {
-  const l = (name || '').toLowerCase();
-  return SHELF_STABLE.some(k => l.includes(k));
-}
-function freshnessFor(name, mode) {
-  if (isShelfStable(name)) return 0.98;
-  if (mode === 'grocery')   return 0.95;  // just bought — fresh
-  if (mode === 'onboarding') return 0.45; // already in your kitchen — use soon
-  return 0.85;                            // ad-hoc add
-}
-function guessLocFromName(name) {
-  const lower = (name || '').toLowerCase();
-  if (['onion', 'garlic', 'potato', 'tomato', 'rice', 'pasta', 'oil', 'sauce', 'spice', 'flour', 'sugar', 'can', 'cumin', 'paprika', 'salt', 'pepper'].some(k => lower.includes(k))) return 'pantry';
-  return 'fridge';
+function AuthedApp({ p, t, setTweak, session }) {
+  const [pantry, setPantry] = useStateA([]);
+  const [recipes, setRecipes] = useStateA([]);
+  const [profile, setProfile] = useStateA(null);
+  const [loading, setLoading] = useStateA(true);
+  const [cookedDays, setCookedDays] = useStateA([true, true, false, true, true, false, false]);
+
+  // Load profile + recipes + pantry on auth
+  useEffectA(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        await window.PP.loadIngredients();
+        const [r, pn, prof] = await Promise.all([
+          window.PP.getRecipes(),
+          window.PP.getPantry(),
+          window.PP.getProfile(),
+        ]);
+        if (cancelled) return;
+        setRecipes(r);
+        setPantry(pn);
+        setProfile(prof);
+      } catch (err) {
+        console.error('Failed to load data', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session.user.id]);
+
+  // Decide initial route once data loads
+  const [stack, setStack] = useStateA([{ name: 'home' }]);
+  const [didRouteOnLoad, setDidRouteOnLoad] = useStateA(false);
+  useEffectA(() => {
+    if (loading || didRouteOnLoad) return;
+    if (pantry.length === 0) setStack([{ name: 'onboarding' }]);
+    else setStack([{ name: 'home' }]);
+    setDidRouteOnLoad(true);
+  }, [loading, pantry.length, didRouteOnLoad]);
+
+  const top = stack[stack.length - 1];
+
+  const navigate = (name, arg) => {
+    if (name === 'back') {
+      setStack(s => s.length > 1 ? s.slice(0, -1) : s);
+      return;
+    }
+    if (['home', 'pantry', 'browse', 'profile'].includes(name)) {
+      setStack([{ name }]);
+    } else {
+      setStack(s => [...s, { name, arg }]);
+    }
+  };
+
+  const [addSheet, setAddSheet] = useStateA(null);
+  const [showCook, setShowCook] = useStateA(null);
+  const openAdd = (mode = 'add') => setAddSheet(mode);
+
+  const onAddItems = async (items, mode = 'inventory') => {
+    if (!items || items.length === 0) return;
+    try {
+      const { added, unresolved } = await window.PP.addPantryItems(
+        items.map(it => ({ ...it, mode }))
+      );
+      if (unresolved.length) console.warn('Unresolved ingredients:', unresolved);
+      // Re-fetch pantry to get the joined ingredient data shaped correctly
+      const pn = await window.PP.getPantry();
+      setPantry(pn);
+    } catch (err) {
+      console.error('addPantryItems failed', err);
+    }
+  };
+
+  const onRemove = async (id) => {
+    setPantry(pp => pp.filter(i => i.id !== id));
+    try { await window.PP.removePantryItem(id); }
+    catch (err) {
+      console.error('removePantryItem failed', err);
+      // refetch on error
+      const pn = await window.PP.getPantry();
+      setPantry(pn);
+    }
+  };
+
+  const pantryIds = useMemoA(
+    () => new Set(pantry.map(i => i.ingredient_id || i.id)),
+    [pantry]
+  );
+
+  const activeTab = ['home', 'pantry', 'browse', 'profile'].includes(top.name) ? top.name : null;
+
+  // Shape pantry/recipes to match what existing screens expect
+  const liveData = useMemoA(() => ({
+    user: {
+      name: profile?.name || session.user.email?.split('@')[0] || 'there',
+      streak: profile?.streak_days ?? 0,
+      cookedThisWeek: cookedDays.filter(Boolean).length,
+      cuisinesThisWeek: ['Italian', 'Thai', 'Mexican'],
+    },
+    pantry,
+    recipes,
+    cuisines: ['All', 'Italian', 'Mexican', 'Thai', 'Middle Eastern', 'Mediterranean', 'Modern', 'Japanese', 'Indian'],
+  }), [pantry, recipes, profile, session, cookedDays]);
+
+  if (loading) return <Splash p={p} />;
+
+  let screen;
+  if (top.name === 'onboarding') {
+    screen = <Onboarding p={p}
+      initialName={profile?.name || session.user.user_metadata?.name || ''}
+      onFinish={async (items, name) => {
+        if (name && name !== profile?.name) {
+          try {
+            const prof = await window.PP.updateProfile({ name });
+            setProfile(prof);
+          } catch (err) { console.error('updateProfile failed', err); }
+        }
+        if (items && items.length) await onAddItems(items, 'onboarding');
+        setStack([{ name: 'home' }]);
+      }} />;
+  } else if (top.name === 'home') {
+    screen = <HomeScreen p={p} t={t} data={liveData} pantryIds={pantryIds}
+              navigate={navigate} cookedDays={cookedDays}
+              onGrocery={() => openAdd('grocery')} />;
+  } else if (top.name === 'pantry') {
+    screen = <PantryScreen p={p} data={liveData} navigate={navigate} onRemove={onRemove} />;
+  } else if (top.name === 'browse') {
+    screen = <BrowseScreen p={p} t={t} data={liveData} pantryIds={pantryIds} navigate={navigate} />;
+  } else if (top.name === 'profile') {
+    screen = <ProfileScreen p={p} data={liveData} navigate={navigate}
+              onShop={() => navigate('shopping')} />;
+  } else if (top.name === 'settings') {
+    screen = <SettingsScreen p={p} navigate={navigate} />;
+  } else if (top.name === 'shopping') {
+    screen = <ShoppingScreen p={p} data={liveData} pantryIds={pantryIds} navigate={navigate} />;
+  } else if (top.name === 'recipe') {
+    screen = <RecipeDetailScreen p={p} t={t} data={liveData} pantryIds={pantryIds}
+              recipeId={top.arg} navigate={navigate} onCook={(id) => setShowCook(id)} />;
+  }
+
+  return (
+    <>
+      <div data-screen-label={`screen-${top.name}`} style={{
+        position: 'absolute', left: 0, right: 0,
+        top: 'env(safe-area-inset-top)', bottom: 0,
+        overflowY: 'auto',
+      }}>
+        {screen}
+      </div>
+
+      {top.name !== 'onboarding' && (
+        <TabBar active={activeTab || 'home'}
+          onChange={navigate}
+          onAdd={() => openAdd('add')} p={p} />
+      )}
+
+      {addSheet && (
+        <AddChatScreen p={p} mode={addSheet}
+          onClose={() => setAddSheet(null)}
+          onAdd={(items) => onAddItems(items, addSheet)} />
+      )}
+      {showCook && (
+        <CookScreen p={p} data={liveData} recipeId={showCook}
+          navigate={navigate}
+          onFinish={() => {
+            setShowCook(null);
+            const day = (new Date().getDay() + 6) % 7;
+            setCookedDays(d => d.map((v, i) => i === day ? true : v));
+          }} />
+      )}
+    </>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
 // Mount — full-bleed PWA
 // ─────────────────────────────────────────────────────────────
 function Mount() {
-  // On wide screens (desktop preview), constrain to a phone-shaped viewport
-  // so the layout still feels right. On mobile, fill the device.
   const [isWide, setIsWide] = useStateA(typeof window !== 'undefined' && window.innerWidth > 540);
   useEffectA(() => {
     const onResize = () => setIsWide(window.innerWidth > 540);

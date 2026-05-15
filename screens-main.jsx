@@ -5,17 +5,14 @@ const { useState: useState1, useEffect: useEffect1, useRef: useRef1, useMemo: us
 // ─────────────────────────────────────────────────────────────
 // Onboarding — 3 steps (welcome, name, chat)
 // ─────────────────────────────────────────────────────────────
-function Onboarding({ onFinish, p }) {
+function Onboarding({ onFinish, p, initialName = '' }) {
   const [step, setStep] = useState1(0);
-  const [name, setName] = useState1('Sam');
-  const [pantryItems, setPantryItems] = useState1([]);
+  const [name, setName] = useState1(initialName || 'Sam');
 
   if (step === 0) return <OnboardingWelcome p={p} onNext={() => setStep(1)} />;
   if (step === 1) return <OnboardingName p={p} name={name} setName={setName} onNext={() => setStep(2)} />;
-  if (step === 2) return <OnboardingVoice p={p} name={name}
-    onFinish={(items) => { setPantryItems(items); setStep(3); }} />;
-  return <OnboardingSignIn p={p} name={name} pantryCount={pantryItems.length}
-    onFinish={() => onFinish(pantryItems)} />;
+  return <OnboardingVoice p={p} name={name}
+    onFinish={(items) => onFinish(items, name)} />;
 }
 
 // Sample utterances cycled on each tap — what someone naturally says.
