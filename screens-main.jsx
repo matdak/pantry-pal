@@ -272,43 +272,53 @@ function OnboardingVoice({ p, name, onFinish }) {
         }}>
           <div style={{
             fontFamily: '"DM Sans", system-ui', fontSize: 13,
-            color: phase === 'error' || phase === 'denied' ? p.danger : p.inkSoft,
-            fontWeight: 500, minHeight: 18, textAlign: 'center',
+            color: (phase === 'error' || phase === 'denied') ? p.danger : phase === 'recording' ? p.accent : p.inkSoft,
+            fontWeight: phase === 'recording' ? 600 : 500, minHeight: 18, textAlign: 'center',
           }}>
             {(phase === 'error' || phase === 'denied') && errorMsg ? errorMsg :
-             phase === 'recording' ? 'Tap to stop' :
+             phase === 'recording' ? 'Speak now — tap to stop' :
              phase === 'transcribing' ? 'Transcribing…' :
              phase === 'animating' ? '' :
              phase === 'landed' ? 'Got those.' :
-             transcripts.length === 0 ? 'Tap to talk' :
+             transcripts.length === 0 ? 'Tap to start talking' :
              'Tap to add more'}
           </div>
           <MicButton phase={phase} onClick={onMicTap} p={p} />
         </div>
       ) : (
         <div style={{ padding: '6px 14px 8px', background: p.paper }}>
-          <div style={{
-            display: 'flex', gap: 8, alignItems: 'center',
-            background: p.surface, border: `1px solid ${p.line}`, borderRadius: 999,
-            padding: '4px 6px 4px 16px',
-          }}>
-            <input value={draft} onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendTyped()}
-              autoFocus
-              placeholder="What did you find?"
-              style={{
-                flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                color: p.ink, fontFamily: '"DM Sans", system-ui', fontSize: 15,
-                padding: '10px 0',
-              }} />
-            <button onClick={sendTyped} disabled={!draft.trim()} style={{
-              width: 36, height: 36, borderRadius: 999, border: 'none',
-              background: draft.trim() ? p.accent : p.surfaceAlt,
-              color: draft.trim() ? p.accentInk : p.inkFaint, cursor: 'pointer',
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={() => setKeyboardMode(false)} style={{
+              width: 44, height: 44, borderRadius: 999, flexShrink: 0,
+              background: p.surface, border: `1px solid ${p.line}`,
+              color: p.ink, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Icon name="send" size={15} strokeWidth={1.8} />
+              <Icon name="mic" size={18} strokeWidth={1.8} />
             </button>
+            <div style={{
+              flex: 1, display: 'flex', gap: 8, alignItems: 'center',
+              background: p.surface, border: `1px solid ${p.line}`, borderRadius: 999,
+              padding: '4px 6px 4px 16px',
+            }}>
+              <input value={draft} onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendTyped()}
+                autoFocus
+                placeholder="What did you find?"
+                style={{
+                  flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                  color: p.ink, fontFamily: '"DM Sans", system-ui', fontSize: 15,
+                  padding: '10px 0',
+                }} />
+              <button onClick={sendTyped} disabled={!draft.trim()} style={{
+                width: 36, height: 36, borderRadius: 999, border: 'none',
+                background: draft.trim() ? p.accent : p.surfaceAlt,
+                color: draft.trim() ? p.accentInk : p.inkFaint, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icon name="send" size={15} strokeWidth={1.8} />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -401,22 +411,7 @@ function ParsedItemRow({ item, p }) {
           fontFamily: '"DM Sans", system-ui', fontSize: 14, fontWeight: 600,
           color: p.ink, lineHeight: 1.2,
         }}>{item.name}</div>
-        {item.said ? (
-          <div style={{
-            fontFamily: '"DM Sans", system-ui', fontSize: 11.5, color: p.inkSoft,
-            marginTop: 2, lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 4,
-            flexWrap: 'wrap',
-          }}>
-            <span style={{ fontStyle: 'italic' }}>"{item.said}"</span>
-            <Icon name="arrowRight" size={10} stroke={p.inkFaint} strokeWidth={2} />
-            <span style={{
-              fontFamily: '"JetBrains Mono", monospace', fontSize: 10.5,
-              color: p.ink, fontWeight: 600,
-              padding: '1px 5px', borderRadius: 4, background: p.surfaceAlt,
-            }}>{item.qty}</span>
-          </div>
-        ) : (
-          <div style={{
+        <div style={{
             fontFamily: '"DM Sans", system-ui', fontSize: 11.5, color: p.inkSoft,
             marginTop: 2,
           }}>
@@ -426,7 +421,6 @@ function ParsedItemRow({ item, p }) {
               padding: '1px 5px', borderRadius: 4, background: p.surfaceAlt,
             }}>{item.qty}</span>
           </div>
-        )}
       </div>
       {item.tag === 'expiring' && (
         <span style={{
@@ -1297,13 +1291,6 @@ function PantryRow({ item, p, onRemove }) {
             padding: '1px 5px', borderRadius: 4, background: p.surfaceAlt,
           }}>{item.qty}</span>
           {item.loc && <span style={{ color: p.inkFaint }}>{item.loc}</span>}
-          {item.said && (
-            <span style={{
-              color: p.inkFaint, fontStyle: 'italic',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              maxWidth: 160,
-            }}>"{item.said}"</span>
-          )}
         </div>
       </div>
       <span style={{
