@@ -220,7 +220,7 @@ function AuthedApp({ p, t, setTweak, session }) {
               navigate={navigate} cookedDays={cookedDays}
               onGrocery={() => openAdd('grocery')} />;
   } else if (top.name === 'pantry') {
-    screen = <PantryScreen p={p} data={liveData} navigate={navigate} onRemove={onRemove} />;
+    screen = <PantryScreen p={p} data={liveData} navigate={navigate} onRemove={onRemove} onAdd={() => openAdd('add')} />;
   } else if (top.name === 'browse') {
     screen = <BrowseScreen p={p} t={t} data={liveData} pantryIds={pantryIds} navigate={navigate} />;
   } else if (top.name === 'profile') {

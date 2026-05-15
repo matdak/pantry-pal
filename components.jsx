@@ -170,16 +170,22 @@ function TabBar({ active, onChange, onAdd, p }) {
         {tabs.slice(0, 2).map(t => (
           <TabBtn key={t.id} t={t} active={active === t.id} onClick={() => onChange(t.id)} p={p} />
         ))}
-        <button onClick={onAdd}
-          style={{
-            width: 52, height: 52, borderRadius: 999, border: 'none',
-            background: p.accent, color: p.accentInk,
-            margin: '0 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: `0 6px 16px ${p.accent}55, 0 1px 0 rgba(255,255,255,0.3) inset`,
-            cursor: 'pointer', flexShrink: 0,
-          }}>
-          <Icon name="plus" size={24} strokeWidth={2.2} />
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, margin: '0 2px' }}>
+          <button onClick={onAdd}
+            style={{
+              width: 52, height: 52, borderRadius: 999, border: 'none',
+              background: p.accent, color: p.accentInk,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 6px 16px ${p.accent}55, 0 1px 0 rgba(255,255,255,0.3) inset`,
+              cursor: 'pointer', flexShrink: 0,
+            }}>
+            <Icon name="plus" size={22} strokeWidth={2.2} />
+          </button>
+          <span style={{
+            fontFamily: '"DM Sans", system-ui', fontSize: 10, fontWeight: 600,
+            color: p.accent, letterSpacing: 0.2,
+          }}>Add items</span>
+        </div>
         {tabs.slice(2).map(t => (
           <TabBtn key={t.id} t={t} active={active === t.id} onClick={() => onChange(t.id)} p={p} />
         ))}

@@ -1205,7 +1205,7 @@ function WeekProgress({ p, data, cookedDays }) {
 // ─────────────────────────────────────────────────────────────
 // Pantry screen — grouped inventory
 // ─────────────────────────────────────────────────────────────
-function PantryScreen({ p, data, navigate, onRemove }) {
+function PantryScreen({ p, data, navigate, onRemove, onAdd }) {
   const [filter, setFilter] = useState1('all');
   const cats = ['Produce', 'Protein', 'Dairy', 'Grains', 'Pantry', 'Spices'];
   const expiring = data.pantry.filter(i => i.expiring);
@@ -1248,20 +1248,56 @@ function PantryScreen({ p, data, navigate, onRemove }) {
         <div style={{ paddingRight: 18 }} />
       </div>
 
-      {Object.entries(grouped).map(([cat, items]) => (
-        <div key={cat} style={{ marginBottom: 22 }}>
+      {data.pantry.length === 0 ? (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          padding: '48px 32px 32px', textAlign: 'center',
+        }}>
           <div style={{
-            padding: '0 18px 8px', fontFamily: '"JetBrains Mono", monospace',
-            fontSize: 10, color: p.inkFaint, textTransform: 'uppercase',
-            letterSpacing: 1.5, fontWeight: 600,
-          }}>{cat} · {items.length}</div>
-          <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {items.map(item => (
-              <PantryRow key={item.id} item={item} p={p} onRemove={() => onRemove(item.id)} />
-            ))}
+            width: 80, height: 80, borderRadius: 28,
+            background: p.accent + '15',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 22,
+          }}>
+            <Icon name="pantry" size={36} strokeWidth={1.4} stroke={p.accent} />
           </div>
+          <div style={{
+            fontFamily: '"Newsreader", Georgia, serif', fontSize: 28,
+            color: p.ink, fontWeight: 400, letterSpacing: -0.3, marginBottom: 10,
+          }}>Your kitchen is empty</div>
+          <div style={{
+            fontFamily: '"DM Sans", system-ui', fontSize: 14,
+            color: p.inkSoft, lineHeight: 1.55, maxWidth: 270, marginBottom: 32,
+          }}>
+            Open a drawer, talk through a shelf — Pal will sort it all out.
+          </div>
+          <button onClick={onAdd} style={{
+            padding: '14px 26px', borderRadius: 999, border: 'none',
+            background: p.accent, color: p.accentInk,
+            fontFamily: '"DM Sans", system-ui', fontSize: 15, fontWeight: 600,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+            boxShadow: `0 8px 24px ${p.accent}40`,
+          }}>
+            <Icon name="plus" size={16} strokeWidth={2.2} />
+            Add your first items
+          </button>
         </div>
-      ))}
+      ) : (
+        Object.entries(grouped).map(([cat, items]) => (
+          <div key={cat} style={{ marginBottom: 22 }}>
+            <div style={{
+              padding: '0 18px 8px', fontFamily: '"JetBrains Mono", monospace',
+              fontSize: 10, color: p.inkFaint, textTransform: 'uppercase',
+              letterSpacing: 1.5, fontWeight: 600,
+            }}>{cat} · {items.length}</div>
+            <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {items.map(item => (
+                <PantryRow key={item.id} item={item} p={p} onRemove={() => onRemove(item.id)} />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
