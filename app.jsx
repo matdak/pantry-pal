@@ -91,24 +91,30 @@ function AuthedApp({ p, t, setTweak, session }) {
   const [recipes, setRecipes] = useStateA([]);
   const [profile, setProfile] = useStateA(null);
   const [loading, setLoading] = useStateA(true);
-  const [cookedDays, setCookedDays] = useStateA([true, true, false, true, true, false, false]);
+  const [cookedDays, setCookedDays] = useStateA([false, false, false, false, false, false, false]);
+  const [cuisinesThisWeek, setCuisinesThisWeek] = useStateA([]);
+  const [totalCooked, setTotalCooked] = useStateA(0);
 
-  // Load profile + recipes + pantry on auth
+  // Load profile + recipes + pantry + cook stats on auth
   useEffectA(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
       try {
         await window.PP.loadIngredients();
-        const [r, pn, prof] = await Promise.all([
+        const [r, pn, prof, stats] = await Promise.all([
           window.PP.getRecipes(),
           window.PP.getPantry(),
           window.PP.getProfile(),
+          window.PP.getCookStats(),
         ]);
         if (cancelled) return;
         setRecipes(r);
         setPantry(pn);
         setProfile(prof);
+        setCookedDays(stats.cookedDays);
+        setCuisinesThisWeek(stats.cuisinesThisWeek);
+        setTotalCooked(stats.totalCooked);
       } catch (err) {
         console.error('Failed to load data', err);
       } finally {
@@ -185,12 +191,13 @@ function AuthedApp({ p, t, setTweak, session }) {
       name: profile?.name || session.user.email?.split('@')[0] || 'there',
       streak: profile?.streak_days ?? 0,
       cookedThisWeek: cookedDays.filter(Boolean).length,
-      cuisinesThisWeek: ['Italian', 'Thai', 'Mexican'],
+      cuisinesThisWeek,
+      totalCooked,
     },
     pantry,
     recipes,
     cuisines: ['All', 'Italian', 'Mexican', 'Thai', 'Middle Eastern', 'Mediterranean', 'Modern', 'Japanese', 'Indian'],
-  }), [pantry, recipes, profile, session, cookedDays]);
+  }), [pantry, recipes, profile, session, cookedDays, cuisinesThisWeek, totalCooked]);
 
   if (loading) return <Splash p={p} />;
 
@@ -217,7 +224,7 @@ function AuthedApp({ p, t, setTweak, session }) {
   } else if (top.name === 'browse') {
     screen = <BrowseScreen p={p} t={t} data={liveData} pantryIds={pantryIds} navigate={navigate} />;
   } else if (top.name === 'profile') {
-    screen = <ProfileScreen p={p} data={liveData} navigate={navigate}
+    screen = <ProfileScreen p={p} data={liveData} profile={profile} navigate={navigate}
               onShop={() => navigate('shopping')} />;
   } else if (top.name === 'settings') {
     screen = <SettingsScreen p={p} navigate={navigate} />;
@@ -252,10 +259,29 @@ function AuthedApp({ p, t, setTweak, session }) {
       {showCook && (
         <CookScreen p={p} data={liveData} recipeId={showCook}
           navigate={navigate}
-          onFinish={() => {
+          onFinish={async (recipeId) => {
+            const id = recipeId || showCook;
             setShowCook(null);
+            // Optimistic local update
             const day = (new Date().getDay() + 6) % 7;
             setCookedDays(d => d.map((v, i) => i === day ? true : v));
+            setTotalCooked(n => n + 1);
+            const cooked = recipes.find(r => r.id === id);
+            if (cooked && !cuisinesThisWeek.includes(cooked.cuisine)) {
+              setCuisinesThisWeek(cs => [...cs, cooked.cuisine]);
+            }
+            // Persist
+            try { await window.PP.cookCompleted(id); }
+            catch (err) {
+              console.error('cookCompleted failed', err);
+              // Re-fetch stats on failure to stay consistent
+              try {
+                const stats = await window.PP.getCookStats();
+                setCookedDays(stats.cookedDays);
+                setCuisinesThisWeek(stats.cuisinesThisWeek);
+                setTotalCooked(stats.totalCooked);
+              } catch {}
+            }
           }} />
       )}
     </>

@@ -1057,7 +1057,11 @@ function CuisineVariety({ p, data }) {
         <div style={{
           fontFamily: '"DM Sans", system-ui', fontSize: 13, color: p.inkSoft,
           marginBottom: 10,
-        }}>{cooked.length} cuisines this week — nice mix.</div>
+        }}>{
+          cooked.length === 0 ? 'Cook something to start your streak.'
+          : cooked.length === 1 ? '1 cuisine this week — branch out?'
+          : `${cooked.length} cuisines this week — nice mix.`
+        }</div>
         <div style={{ display: 'flex', gap: 4 }}>
           {all.map(c => {
             const on = cooked.includes(c);
@@ -1087,7 +1091,11 @@ function WeekProgress({ p, data, cookedDays }) {
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   return (
     <div style={{ padding: '0 18px 26px' }}>
-      <SectionHeader kicker="Habit" title={`${cookedDays.filter(Boolean).length} cooked, ${7 - cookedDays.filter(Boolean).length} to go.`} p={p} />
+      <SectionHeader kicker="Habit" title={
+        cookedDays.filter(Boolean).length === 0
+          ? 'A blank week — start where you want.'
+          : `${cookedDays.filter(Boolean).length} cooked, ${7 - cookedDays.filter(Boolean).length} to go.`
+      } p={p} />
       <div style={{
         padding: 16, borderRadius: 16, background: p.surface, border: `1px solid ${p.line}`,
         display: 'flex', justifyContent: 'space-between',

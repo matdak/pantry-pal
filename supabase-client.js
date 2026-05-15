@@ -169,6 +169,44 @@
     return data;
   }
 
+  // ── Cooked recipes ────────────────────────────────────────────────────
+  async function cookCompleted(recipeId) {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) throw new Error('Not signed in');
+    const { data, error } = await sb.from('cooked_recipes')
+      .insert({ user_id: user.id, recipe_id: recipeId })
+      .select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function getCookStats() {
+    // total all-time + this week (last 7 days)
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const [totalRes, weekRes] = await Promise.all([
+      sb.from('cooked_recipes').select('id', { count: 'exact', head: true }),
+      sb.from('cooked_recipes')
+        .select('cooked_at, recipes(cuisine)')
+        .gte('cooked_at', weekAgo),
+    ]);
+    if (totalRes.error) throw totalRes.error;
+    if (weekRes.error) throw weekRes.error;
+
+    const cookedDays = [false, false, false, false, false, false, false]; // Mon..Sun
+    const cuisines = new Set();
+    for (const row of (weekRes.data || [])) {
+      const d = new Date(row.cooked_at);
+      const idx = (d.getDay() + 6) % 7; // Mon = 0
+      cookedDays[idx] = true;
+      if (row.recipes?.cuisine) cuisines.add(row.recipes.cuisine);
+    }
+    return {
+      totalCooked: totalRes.count || 0,
+      cookedDays,
+      cuisinesThisWeek: [...cuisines],
+    };
+  }
+
   // ── Auth ───────────────────────────────────────────────────────────────
   async function signUp(email, password, name) {
     const { data, error } = await sb.auth.signUp({
@@ -194,6 +232,7 @@
     loadIngredients, resolveIngredient,
     getRecipes, getPantry, addPantryItems, removePantryItem,
     getProfile, updateProfile,
+    cookCompleted, getCookStats,
     signUp, signIn, signOut, onAuthChange,
   };
 })();

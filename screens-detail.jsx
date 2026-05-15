@@ -533,7 +533,9 @@ function guessCat(id) {
 // ─────────────────────────────────────────────────────────────
 // Profile / You — overview + entry to nested screens
 // ─────────────────────────────────────────────────────────────
-function ProfileScreen({ p, data, onShop, navigate }) {
+function ProfileScreen({ p, data, profile, onShop, navigate }) {
+  const dietary = profile?.dietary?.length ? profile.dietary.join(', ') : 'No restrictions';
+  const prefSummary = `${profile?.skill || 'Comfortable'} · ${dietary}`;
   return (
     <div style={{ paddingBottom: 120 }}>
       <div style={{ padding: '20px 18px 14px' }}>
@@ -550,7 +552,9 @@ function ProfileScreen({ p, data, onShop, navigate }) {
             }}>{data.user.name}</div>
             <div style={{
               fontFamily: '"DM Sans", system-ui', fontSize: 13, color: p.inkSoft,
-            }}>Member since May 2026 · {data.user.streak} day streak 🔥</div>
+            }}>{data.user.streak > 0
+              ? `${data.user.streak} day streak 🔥`
+              : 'Welcome to Pantry Pal'}</div>
           </div>
         </div>
       </div>
@@ -558,9 +562,9 @@ function ProfileScreen({ p, data, onShop, navigate }) {
       <div style={{
         margin: '0 18px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10,
       }}>
-        <Statlet label="Cooked" value="38" sub="recipes" p={p} />
-        <Statlet label="Saved" value="$240" sub="vs takeout" p={p} />
-        <Statlet label="Waste" value="-72%" sub="this month" p={p} />
+        <Statlet label="Cooked" value={String(data.user.totalCooked ?? 0)} sub="recipes" p={p} />
+        <Statlet label="This week" value={String(data.user.cookedThisWeek ?? 0)} sub={(data.user.cookedThisWeek ?? 0) === 1 ? 'meal' : 'meals'} p={p} />
+        <Statlet label="Pantry" value={String(data.pantry.length)} sub={data.pantry.length === 1 ? 'item' : 'items'} p={p} />
       </div>
 
       <ProfileTile icon="cart" title="Shopping list"
@@ -568,24 +572,26 @@ function ProfileScreen({ p, data, onShop, navigate }) {
         onClick={onShop} p={p} />
 
       <ProfileTile icon="book" title="Saved recipes"
-        sub="12 favorites" onClick={() => {}} p={p} />
+        sub={data.user.savedCount ? `${data.user.savedCount} favorites` : 'Nothing saved yet'}
+        onClick={() => {}} p={p} />
 
       <ProfileTile icon="leaf" title="Cooking history"
-        sub="Last 30 days" onClick={() => {}} p={p} />
+        sub={data.user.totalCooked ? `${data.user.totalCooked} recipes cooked` : 'No cooks yet'}
+        onClick={() => {}} p={p} />
 
       <div style={{ height: 10 }} />
 
       <div style={{ margin: '0 18px', borderRadius: 14, background: p.surface, border: `1px solid ${p.line}`, overflow: 'hidden' }}>
-        <ProfileRow icon="sparkle" label="Preferences & taste" detail="Comfortable · Pescatarian"
+        <ProfileRow icon="sparkle" label="Preferences & taste" detail={prefSummary}
           onClick={() => navigate('settings')} p={p} first />
-        <ProfileRow icon="bell" label="Notifications" detail="On" onClick={() => {}} p={p} />
+        <ProfileRow icon="bell" label="Notifications" detail="Off" onClick={() => {}} p={p} />
         <ProfileRow icon="fridge" label="Connected appliances" detail="None" onClick={() => {}} p={p} />
-        <ProfileRow icon="cart" label="Grocery integrations" detail="Instacart" onClick={() => {}} p={p} />
+        <ProfileRow icon="cart" label="Grocery integrations" detail="None" onClick={() => {}} p={p} />
         <ProfileRow icon="profile" label="Account" detail="" onClick={() => {}} p={p} last />
       </div>
 
       <div style={{ padding: '18px 18px 0', textAlign: 'center' }}>
-        <button style={{
+        <button onClick={() => window.PP.signOut()} style={{
           background: 'transparent', border: 'none', cursor: 'pointer',
           color: p.inkSoft, fontFamily: '"DM Sans", system-ui', fontSize: 13,
           fontWeight: 500, padding: 8,
