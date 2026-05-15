@@ -207,6 +207,137 @@
     };
   }
 
+  // ── Mic recording + transcription ─────────────────────────────────────
+  function pickMimeType() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    for (const t of candidates) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return '';
+  }
+
+  // Returns { stop: () => Promise<{ blob, mimeType }>, cancel: () => void }
+  async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Microphone not supported in this browser');
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    const mimeType = pickMimeType();
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    rec.start();
+
+    const cleanup = () => {
+      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+    };
+
+    return {
+      stop() {
+        return new Promise((resolve, reject) => {
+          rec.onerror = (e) => { cleanup(); reject(e.error || new Error('recorder error')); };
+          rec.onstop = () => {
+            cleanup();
+            const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+            resolve({ blob, mimeType: rec.mimeType || 'audio/webm' });
+          };
+          try { rec.stop(); } catch (e) { cleanup(); reject(e); }
+        });
+      },
+      cancel() {
+        try { rec.stop(); } catch {}
+        cleanup();
+      },
+    };
+  }
+
+  async function transcribe(blob, { languageCode } = {}) {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Not signed in');
+
+    const form = new FormData();
+    form.append('file', blob, 'recording.webm');
+    if (languageCode) form.append('language_code', languageCode);
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/transcribe`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_KEY,
+      },
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Transcribe ${res.status}: ${text || res.statusText}`);
+    }
+    const json = await res.json();
+    // ElevenLabs returns { text, words, language_code, ... }
+    return json;
+  }
+
+  // Parse a transcript into pantry items via the alias map.
+  // Splits on commas / "and" / "plus", looks up each fragment, captures qty hints.
+  function parseTranscript(text) {
+    const ensureLoaded = !!_aliasMap;
+    if (!ensureLoaded) return [];
+    const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!cleaned) return [];
+    // Split by separators
+    const fragments = cleaned
+      .split(/,| and | plus | also /i)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    const items = [];
+    const seen = new Set();
+    for (const frag of fragments) {
+      const ing = resolveIngredient(frag);
+      if (!ing) continue;
+      if (seen.has(ing.id)) continue;
+      seen.add(ing.id);
+
+      const qty = extractQuantityHint(frag);
+      const looksExpiring = /sad|going off|almost gone|wilting|expired|stale|old/i.test(frag);
+      items.push({
+        name: ing.name,
+        said: frag,
+        qty: qty || '',
+        tag: looksExpiring ? 'expiring' : undefined,
+      });
+    }
+    return items;
+  }
+
+  function extractQuantityHint(s) {
+    const t = s.toLowerCase();
+    if (/\bhalf( a)?\b/.test(t)) return '~½';
+    if (/\ba couple\b/.test(t)) return '~2';
+    if (/\ba few\b/.test(t)) return '~3';
+    if (/\ba bunch\b/.test(t)) return '~1 bunch';
+    if (/\ba bag\b/.test(t)) return '~1 bag';
+    if (/\ba can\b/.test(t)) return '~1 can';
+    if (/\ba head\b/.test(t)) return '1 head';
+    if (/\ba box\b/.test(t)) return '~1 box';
+    const num = t.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/);
+    if (num) {
+      const map = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+      return `~${map[num[1]] ?? num[1]}`;
+    }
+    return '';
+  }
+
   // ── Auth ───────────────────────────────────────────────────────────────
   async function signUp(email, password, name) {
     const { data, error } = await sb.auth.signUp({
@@ -229,10 +360,11 @@
 
   window.PP = {
     sb,
-    loadIngredients, resolveIngredient,
+    loadIngredients, resolveIngredient, parseTranscript,
     getRecipes, getPantry, addPantryItems, removePantryItem,
     getProfile, updateProfile,
     cookCompleted, getCookStats,
+    startRecording, transcribe,
     signUp, signIn, signOut, onAuthChange,
   };
 })();

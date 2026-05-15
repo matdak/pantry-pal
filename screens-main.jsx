@@ -51,12 +51,13 @@ const VOICE_SAMPLES = [
 function OnboardingVoice({ p, name, onFinish }) {
   const [parsed, setParsed] = useState1([]);
   const [transcripts, setTranscripts] = useState1([]);
-  const [phase, setPhase] = useState1('intro');
+  const [phase, setPhase] = useState1('intro'); // intro|idle|recording|transcribing|animating|landed|denied|error
   const [liveText, setLiveText] = useState1('');
-  const [round, setRound] = useState1(0);
+  const [errorMsg, setErrorMsg] = useState1('');
   const [keyboardMode, setKeyboardMode] = useState1(false);
   const [draft, setDraft] = useState1('');
   const scrollRef = useRef1(null);
+  const recorderRef = useRef1(null);
 
   useEffect1(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' });
@@ -67,38 +68,99 @@ function OnboardingVoice({ p, name, onFinish }) {
     return () => clearTimeout(id);
   }, []);
 
-  const startListening = () => {
-    if (phase === 'listening') return;
-    const sample = VOICE_SAMPLES[round % VOICE_SAMPLES.length];
-    setPhase('listening');
+  // Always cancel any in-flight recording on unmount.
+  useEffect1(() => () => { recorderRef.current?.cancel?.(); }, []);
+
+  const animateLanding = (text) => {
+    setPhase('animating');
     setLiveText('');
-    const words = sample.text.split(' ');
+    const words = text.split(/\s+/);
     let i = 0;
     const tick = () => {
       i += 1;
       setLiveText(words.slice(0, i).join(' '));
       if (i < words.length) {
-        setTimeout(tick, 75 + Math.random() * 50);
+        setTimeout(tick, 55 + Math.random() * 35);
       } else {
         setTimeout(() => {
-          setParsed(p2 => [...p2, ...sample.items]);
-          setTranscripts(ts => [...ts, { text: sample.text, count: sample.items.length }]);
-          setRound(r => r + 1);
+          const items = window.PP.parseTranscript(text);
+          const existing = new Set(parsed.map(it => it.name.toLowerCase()));
+          const fresh = items.filter(it => !existing.has(it.name.toLowerCase()));
+          setParsed(p2 => [...p2, ...fresh]);
+          setTranscripts(ts => [...ts, { text, count: fresh.length }]);
           setLiveText('');
-          setPhase('landed');
-          setTimeout(() => setPhase('idle'), 1200);
-        }, 350);
+          setPhase(fresh.length ? 'landed' : 'idle');
+          if (fresh.length) setTimeout(() => setPhase('idle'), 1200);
+        }, 400);
       }
     };
-    setTimeout(tick, 250);
+    setTimeout(tick, 200);
+  };
+
+  const onMicTap = async () => {
+    if (phase === 'transcribing' || phase === 'animating') return;
+
+    // Currently recording → stop and transcribe
+    if (phase === 'recording') {
+      const handle = recorderRef.current;
+      recorderRef.current = null;
+      setPhase('transcribing');
+      setLiveText('');
+      try {
+        const { blob } = await handle.stop();
+        if (!blob || blob.size < 1500) {
+          setPhase('idle');
+          return;
+        }
+        const result = await window.PP.transcribe(blob, { languageCode: 'eng' });
+        const text = (result?.text || '').trim();
+        if (!text) {
+          setErrorMsg("Didn't catch that — try again?");
+          setPhase('error');
+          setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 2400);
+          return;
+        }
+        animateLanding(text);
+      } catch (err) {
+        console.error('transcribe failed', err);
+        setErrorMsg(err.message || 'Could not transcribe');
+        setPhase('error');
+        setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 2800);
+      }
+      return;
+    }
+
+    // Otherwise start recording
+    try {
+      setErrorMsg('');
+      const handle = await window.PP.startRecording();
+      recorderRef.current = handle;
+      setPhase('recording');
+    } catch (err) {
+      console.error('mic start failed', err);
+      if (err?.name === 'NotAllowedError' || /denied|permission/i.test(err?.message || '')) {
+        setErrorMsg('Mic blocked — switching to keyboard');
+        setKeyboardMode(true);
+        setPhase('denied');
+        setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 2400);
+      } else {
+        setErrorMsg(err?.message || 'Microphone not available');
+        setPhase('error');
+        setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 2800);
+      }
+    }
   };
 
   const sendTyped = () => {
     if (!draft.trim()) return;
-    const items = parseIngredients(draft);
+    const items = (window.PP?.parseTranscript?.(draft)) || [];
     if (items.length) {
-      setParsed(p2 => [...p2, ...items]);
-      setTranscripts(ts => [...ts, { text: draft, count: items.length, typed: true }]);
+      const existing = new Set(parsed.map(x => x.name.toLowerCase()));
+      const fresh = items.filter(it => !existing.has(it.name.toLowerCase()));
+      if (fresh.length) {
+        setParsed(p2 => [...p2, ...fresh]);
+        setTranscripts(ts => [...ts, { text: draft, count: fresh.length, typed: true }]);
+      }
     }
     setDraft('');
   };
@@ -132,7 +194,7 @@ function OnboardingVoice({ p, name, onFinish }) {
         display: 'flex', flexDirection: 'column', gap: 10,
         WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%)',
       }}>
-        {transcripts.length === 0 && phase !== 'listening' && (
+        {transcripts.length === 0 && !['recording', 'transcribing', 'animating'].includes(phase) && (
           <EmptyHint p={p} />
         )}
 
@@ -140,7 +202,7 @@ function OnboardingVoice({ p, name, onFinish }) {
           <TranscriptCard key={i} t={t} p={p} />
         ))}
 
-        {phase === 'listening' && (
+        {['recording', 'transcribing', 'animating'].includes(phase) && (
           <div style={{
             padding: '12px 14px', borderRadius: 14, background: p.surface,
             border: `1px solid ${p.accent}50`,
@@ -155,16 +217,21 @@ function OnboardingVoice({ p, name, onFinish }) {
                 width: 6, height: 6, borderRadius: 999, background: p.accent,
                 animation: 'pulse 1s ease-out infinite',
               }} />
-              Listening
+              {phase === 'recording' ? 'Listening' : phase === 'transcribing' ? 'Transcribing' : 'Got it'}
             </div>
             <div style={{
               fontFamily: '"Newsreader", Georgia, serif', fontSize: 16, lineHeight: 1.4,
-              color: p.ink, fontStyle: 'italic',
-            }}>"{liveText}<span style={{
-              display: 'inline-block', width: 2, height: 14, background: p.accent,
-              marginLeft: 2, verticalAlign: 'middle',
-              animation: 'pulse 0.8s ease-in-out infinite',
-            }} />"</div>
+              color: p.ink, fontStyle: 'italic', minHeight: 22,
+            }}>{liveText
+              ? <>"{liveText}<span style={{
+                  display: 'inline-block', width: 2, height: 14, background: p.accent,
+                  marginLeft: 2, verticalAlign: 'middle',
+                  animation: 'pulse 0.8s ease-in-out infinite',
+                }} />"</>
+              : phase === 'transcribing'
+                ? <span style={{ color: p.inkSoft, fontStyle: 'normal' }}>One sec, working it out…</span>
+                : <span style={{ color: p.inkSoft, fontStyle: 'normal' }}>Tap the mic again when you're done.</span>
+            }</div>
           </div>
         )}
 
@@ -202,15 +269,19 @@ function OnboardingVoice({ p, name, onFinish }) {
           alignItems: 'center', gap: 8,
         }}>
           <div style={{
-            fontFamily: '"DM Sans", system-ui', fontSize: 13, color: p.inkSoft,
+            fontFamily: '"DM Sans", system-ui', fontSize: 13,
+            color: phase === 'error' || phase === 'denied' ? p.danger : p.inkSoft,
             fontWeight: 500, minHeight: 18, textAlign: 'center',
           }}>
-            {phase === 'listening' ? 'Take your time…' :
-             phase === 'landed' ? `Got those.` :
+            {(phase === 'error' || phase === 'denied') && errorMsg ? errorMsg :
+             phase === 'recording' ? 'Tap to stop' :
+             phase === 'transcribing' ? 'Transcribing…' :
+             phase === 'animating' ? '' :
+             phase === 'landed' ? 'Got those.' :
              transcripts.length === 0 ? 'Tap to talk' :
              'Tap to add more'}
           </div>
-          <MicButton phase={phase} onClick={startListening} p={p} />
+          <MicButton phase={phase} onClick={onMicTap} p={p} />
         </div>
       ) : (
         <div style={{ padding: '6px 14px 8px', background: p.paper }}>
@@ -371,11 +442,13 @@ function ParsedItemRow({ item, p }) {
 }
 
 function MicButton({ phase, onClick, p }) {
-  const listening = phase === 'listening';
+  const recording = phase === 'recording';
+  const busy = phase === 'transcribing' || phase === 'animating';
   const landed = phase === 'landed';
+  const disabled = busy;
   return (
     <div style={{ position: 'relative', width: 96, height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {listening && (
+      {recording && (
         <>
           <span style={{
             position: 'absolute', inset: -14, borderRadius: 999,
@@ -387,16 +460,27 @@ function MicButton({ phase, onClick, p }) {
           }} />
         </>
       )}
-      <button onClick={onClick} style={{
+      <button onClick={onClick} disabled={disabled} style={{
         position: 'relative', width: 84, height: 84, borderRadius: 999, border: 'none',
         background: landed ? p.sage : p.accent,
-        color: '#fff', cursor: 'pointer',
+        color: '#fff', cursor: disabled ? 'wait' : 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         boxShadow: `0 12px 30px ${(landed ? p.sage : p.accent)}55, 0 1px 0 rgba(255,255,255,0.3) inset`,
         transition: 'background 0.2s, transform 0.15s',
-        transform: listening ? 'scale(1.04)' : 'scale(1)',
+        transform: recording ? 'scale(1.04)' : 'scale(1)',
+        opacity: disabled ? 0.7 : 1,
       }}>
-        <Icon name={landed ? 'check' : 'mic'} size={36} strokeWidth={landed ? 2.5 : 1.8} />
+        {busy ? (
+          <span style={{
+            width: 28, height: 28, borderRadius: 999,
+            border: '3px solid rgba(255,255,255,0.5)', borderTopColor: '#fff',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        ) : recording ? (
+          <span style={{ width: 26, height: 26, borderRadius: 6, background: '#fff' }} />
+        ) : (
+          <Icon name={landed ? 'check' : 'mic'} size={36} strokeWidth={landed ? 2.5 : 1.8} />
+        )}
       </button>
     </div>
   );
@@ -1248,23 +1332,20 @@ function AddChatScreen({ p, onClose, onAdd, mode = 'add' }) {
   ]);
   const [draft, setDraft] = useState1('');
   const [parsed, setParsed] = useState1([]);
-  const [listening, setListening] = useState1(false);
+  const [phase, setPhase] = useState1('idle'); // idle|recording|transcribing
+  const [errorMsg, setErrorMsg] = useState1('');
   const scrollRef = useRef1(null);
+  const recorderRef = useRef1(null);
 
   useEffect1(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' });
-  }, [chat, parsed]);
+  }, [chat, parsed, phase]);
 
-  const grocerySamples = [
-    "Just picked up some milk, a dozen eggs, ground beef, broccoli, and limes.",
-    "Got chicken breasts, bell peppers, an onion, garlic, and some Greek yogurt.",
-    "Bag of jasmine rice, can of black beans, two cans of crushed tomatoes, and parmesan.",
-  ];
-  const [sampleIdx, setSampleIdx] = useState1(0);
+  useEffect1(() => () => { recorderRef.current?.cancel?.(); }, []);
 
   const send = (text) => {
     if (!text.trim()) return;
-    const items = parseIngredients(text);
+    const items = (window.PP?.parseTranscript?.(text)) || [];
     setChat(c => [
       ...c,
       { role: 'user', text },
@@ -1272,18 +1353,58 @@ function AddChatScreen({ p, onClose, onAdd, mode = 'add' }) {
         ? (isGrocery ? groceryReply(items) : warmReply(items))
         : "Hmm, didn't catch that. Try \"some carrots and a head of garlic\"?" },
     ]);
-    setParsed(pp => [...pp, ...items]);
+    if (items.length) {
+      setParsed(pp => {
+        const have = new Set(pp.map(x => x.name.toLowerCase()));
+        return [...pp, ...items.filter(it => !have.has(it.name.toLowerCase()))];
+      });
+    }
     setDraft('');
   };
 
-  const simulateListenAndSend = () => {
-    setListening(false);
-    if (isGrocery) {
-      send(grocerySamples[sampleIdx % grocerySamples.length]);
-      setSampleIdx(i => i + 1);
-    } else {
-      send('a bag of carrots and some yogurt');
+  const startMic = async () => {
+    try {
+      setErrorMsg('');
+      const handle = await window.PP.startRecording();
+      recorderRef.current = handle;
+      setPhase('recording');
+    } catch (err) {
+      console.error('mic failed', err);
+      setErrorMsg(err?.name === 'NotAllowedError'
+        ? 'Mic blocked — use the keyboard for now'
+        : (err?.message || 'Mic not available'));
+      setTimeout(() => setErrorMsg(''), 2500);
     }
+  };
+
+  const stopMicAndSend = async () => {
+    const handle = recorderRef.current;
+    recorderRef.current = null;
+    if (!handle) { setPhase('idle'); return; }
+    setPhase('transcribing');
+    try {
+      const { blob } = await handle.stop();
+      if (!blob || blob.size < 1500) { setPhase('idle'); return; }
+      const result = await window.PP.transcribe(blob, { languageCode: 'eng' });
+      const text = (result?.text || '').trim();
+      setPhase('idle');
+      if (text) send(text);
+      else {
+        setErrorMsg("Didn't catch that");
+        setTimeout(() => setErrorMsg(''), 2200);
+      }
+    } catch (err) {
+      console.error('transcribe failed', err);
+      setPhase('idle');
+      setErrorMsg(err?.message || 'Could not transcribe');
+      setTimeout(() => setErrorMsg(''), 2800);
+    }
+  };
+
+  const cancelMic = () => {
+    recorderRef.current?.cancel?.();
+    recorderRef.current = null;
+    setPhase('idle');
   };
 
   const finish = () => {
@@ -1322,6 +1443,13 @@ function AddChatScreen({ p, onClose, onAdd, mode = 'add' }) {
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
         {chat.map((m, i) => <Bubble key={i} role={m.role} text={m.text} p={p} />)}
+        {errorMsg && (
+          <div style={{
+            alignSelf: 'center', padding: '8px 12px', borderRadius: 10,
+            background: p.danger + '14', color: p.danger,
+            fontFamily: '"DM Sans", system-ui', fontSize: 13, fontWeight: 500,
+          }}>{errorMsg}</div>
+        )}
         {parsed.length > 0 && (
           <div style={{
             marginTop: 4, padding: '12px 14px 14px', borderRadius: 14, background: p.surface,
@@ -1360,32 +1488,46 @@ function AddChatScreen({ p, onClose, onAdd, mode = 'add' }) {
       </div>
 
       {/* big mic button when listening, else input */}
-      {listening ? (
+      {phase === 'recording' || phase === 'transcribing' ? (
         <div style={{ padding: '20px 18px 24px', textAlign: 'center', background: p.paper, borderTop: `1px solid ${p.line}` }}>
           <div style={{
             fontFamily: '"DM Sans", system-ui', fontSize: 14, color: p.inkSoft,
             marginBottom: 14,
-          }}>{isGrocery ? 'Walk me through the bags…' : 'Listening… speak naturally'}</div>
+          }}>{phase === 'transcribing' ? 'Working it out…'
+              : isGrocery ? 'Walk me through the bags — tap when done'
+              : 'Listening… tap when done'}</div>
           <div style={{ position: 'relative', display: 'inline-block' }}>
-            <div style={{
-              position: 'absolute', inset: -16, borderRadius: 999,
-              background: p.accent + '20', animation: 'pulse 1.8s ease-out infinite',
-            }} />
-            <div style={{
-              position: 'absolute', inset: -8, borderRadius: 999,
-              background: p.accent + '35', animation: 'pulse 1.8s ease-out 0.3s infinite',
-            }} />
-            <button onClick={simulateListenAndSend} style={{
+            {phase === 'recording' && <>
+              <div style={{
+                position: 'absolute', inset: -16, borderRadius: 999,
+                background: p.accent + '20', animation: 'pulse 1.8s ease-out infinite',
+              }} />
+              <div style={{
+                position: 'absolute', inset: -8, borderRadius: 999,
+                background: p.accent + '35', animation: 'pulse 1.8s ease-out 0.3s infinite',
+              }} />
+            </>}
+            <button onClick={stopMicAndSend} disabled={phase === 'transcribing'} style={{
               position: 'relative', width: 84, height: 84, borderRadius: 999, border: 'none',
-              background: p.accent, color: p.accentInk, cursor: 'pointer',
+              background: p.accent, color: p.accentInk,
+              cursor: phase === 'transcribing' ? 'wait' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               boxShadow: `0 12px 30px ${p.accent}55`,
+              opacity: phase === 'transcribing' ? 0.7 : 1,
             }}>
-              <Icon name="mic" size={34} strokeWidth={1.8} />
+              {phase === 'transcribing' ? (
+                <span style={{
+                  width: 28, height: 28, borderRadius: 999,
+                  border: '3px solid rgba(255,255,255,0.5)', borderTopColor: '#fff',
+                  animation: 'spin 0.8s linear infinite',
+                }} />
+              ) : (
+                <span style={{ width: 26, height: 26, borderRadius: 6, background: '#fff' }} />
+              )}
             </button>
           </div>
           <div style={{ marginTop: 14 }}>
-            <button onClick={() => setListening(false)} style={{
+            <button onClick={cancelMic} style={{
               background: 'transparent', border: 'none', color: p.inkSoft,
               fontFamily: '"DM Sans", system-ui', fontSize: 13, cursor: 'pointer',
             }}>Cancel</button>
@@ -1409,8 +1551,8 @@ function AddChatScreen({ p, onClose, onAdd, mode = 'add' }) {
             padding: '8px 14px 24px', background: p.paper,
             display: 'flex', gap: 8, alignItems: 'center',
           }}>
-            <button onClick={() => setListening(true)} style={{
-              width: 44, height: 44, borderRadius: 999, border: 'none',
+            <button onClick={startMic} style={{
+              width: 44, height: 44, borderRadius: 999,
               background: p.surface, color: p.ink, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               border: `1px solid ${p.line}`, flexShrink: 0,
