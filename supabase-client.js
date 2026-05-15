@@ -352,6 +352,17 @@
     if (error) throw error;
     return data;
   }
+  async function signInWithGoogle() {
+    const { data, error } = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { access_type: 'offline', prompt: 'select_account' },
+      },
+    });
+    if (error) throw error;
+    return data;
+  }
   async function signOut() { await sb.auth.signOut(); }
 
   function onAuthChange(cb) {
@@ -365,6 +376,6 @@
     getProfile, updateProfile,
     cookCompleted, getCookStats,
     startRecording, transcribe,
-    signUp, signIn, signOut, onAuthChange,
+    signUp, signIn, signInWithGoogle, signOut, onAuthChange,
   };
 })();
