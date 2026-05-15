@@ -5,19 +5,45 @@ const { useState: useState2, useEffect: useEffect2, useRef: useRef2, useMemo: us
 // ─────────────────────────────────────────────────────────────
 // Browse — filter chips + sorted recipe grid/list
 // ─────────────────────────────────────────────────────────────
+const BROWSE_PAGE_SIZE = 20;
+
 function BrowseScreen({ p, t, data, pantryIds, navigate }) {
   const [cuisine, setCuisine] = useState2('All');
   const [quick, setQuick] = useState2(false);
   const [pantryOnly, setPantryOnly] = useState2(false);
+  const [page, setPage] = useState2(1);
+  const sentinelRef = useRef2(null);
 
   const visible = useMemo2(() => {
     let list = data.recipes.map(r => ({ r, m: calcMatch(r, pantryIds) }));
     if (cuisine !== 'All') list = list.filter(({ r }) => r.cuisine === cuisine);
     if (quick) list = list.filter(({ r }) => r.time <= 25);
     if (pantryOnly) list = list.filter(({ m }) => m.missing === 0);
-    list.sort((a, b) => (b.m.have / b.m.total) - (a.m.have / a.m.total));
+    list.sort((a, b) => {
+      const ratioA = a.m.total ? (a.m.have / a.m.total) : -1;
+      const ratioB = b.m.total ? (b.m.have / b.m.total) : -1;
+      return ratioB - ratioA;
+    });
     return list;
   }, [cuisine, quick, pantryOnly, pantryIds, data]);
+
+  // Reset paging whenever filters change
+  useEffect2(() => { setPage(1); }, [cuisine, quick, pantryOnly]);
+
+  const shown = useMemo2(() => visible.slice(0, page * BROWSE_PAGE_SIZE), [visible, page]);
+  const hasMore = shown.length < visible.length;
+
+  // Infinite scroll: when the sentinel becomes visible, bump the page.
+  useEffect2(() => {
+    if (!hasMore) return;
+    const node = sentinelRef.current;
+    if (!node) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) setPage(p => p + 1);
+    }, { rootMargin: '300px' });
+    io.observe(node);
+    return () => io.disconnect();
+  }, [hasMore, shown.length]);
 
   return (
     <div style={{ paddingBottom: 120 }}>
@@ -25,7 +51,7 @@ function BrowseScreen({ p, t, data, pantryIds, navigate }) {
         <div style={{
           fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
           color: p.accent, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600,
-        }}>Browse · {visible.length} recipes</div>
+        }}>Browse · {visible.length} recipe{visible.length === 1 ? '' : 's'}</div>
         <div style={{
           fontFamily: '"Newsreader", Georgia, serif', fontSize: 32,
           fontWeight: 400, color: p.ink, letterSpacing: -0.5, marginTop: 4,
@@ -50,25 +76,47 @@ function BrowseScreen({ p, t, data, pantryIds, navigate }) {
 
       {t.cardLayout === 'grid' ? (
         <div style={{ padding: '0 18px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {visible.map(({ r, m }) => (
+          {shown.map(({ r, m }) => (
             <RecipeCard key={r.id} recipe={r} match={m} layout="grid" matchStyle={t.matchStyle}
               onClick={() => navigate('recipe', r.id)} p={p} />
           ))}
         </div>
       ) : t.cardLayout === 'feed' ? (
         <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {visible.map(({ r, m }) => (
+          {shown.map(({ r, m }) => (
             <RecipeCard key={r.id} recipe={r} match={m} layout="feed" matchStyle={t.matchStyle}
               onClick={() => navigate('recipe', r.id)} p={p} />
           ))}
         </div>
       ) : (
         <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {visible.map(({ r, m }) => (
+          {shown.map(({ r, m }) => (
             <RecipeCard key={r.id} recipe={r} match={m} layout="list" matchStyle={t.matchStyle}
               onClick={() => navigate('recipe', r.id)} p={p} />
           ))}
         </div>
+      )}
+
+      {hasMore && (
+        <div ref={sentinelRef} style={{
+          padding: '20px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+          <span style={{
+            width: 14, height: 14, borderRadius: 999, border: `2px solid ${p.line}`,
+            borderTopColor: p.accent, animation: 'spin 0.8s linear infinite',
+          }} />
+          <span style={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+            color: p.inkFaint, textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 600,
+          }}>Loading more</span>
+        </div>
+      )}
+      {!hasMore && visible.length > BROWSE_PAGE_SIZE && (
+        <div style={{
+          padding: '20px 18px', textAlign: 'center',
+          fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+          color: p.inkFaint, textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 600,
+        }}>End · {visible.length} shown</div>
       )}
     </div>
   );
