@@ -3,6 +3,67 @@
 const { useState: useState1, useEffect: useEffect1, useRef: useRef1, useMemo: useMemo1 } = React;
 
 // ─────────────────────────────────────────────────────────────
+// Tonight's pick tagline — deterministic per recipe, no LLM
+// ─────────────────────────────────────────────────────────────
+function recipeCallout(r) {
+  const POOLS = {
+    // Cuisine-specific
+    Italian:    ["La cucina is calling.", "Tonight, we go Italian.", "Mangia — dinner's ready.", "The pasta pot is waiting."],
+    Mexican:    ["Fiesta mode: activated.", "Time to spice things up.", "South of the border tonight.", "Your kitchen, your taqueria."],
+    Indian:     ["Bold spices, bolder flavour.", "Your kitchen, your curry house.", "The subcontinent is calling.", "Fragrant and ready."],
+    Chinese:    ["Chopsticks at the ready.", "Tonight's order: homemade.", "Wok on.", "Your kitchen, your takeaway."],
+    Japanese:   ["Itadakimasu — let's eat.", "Precision on a plate tonight.", "Tokyo vibes, your kitchen."],
+    Thai:       ["Sweet, sour, spicy, repeat.", "Bangkok in your kitchen tonight.", "Lemongrass is calling."],
+    French:     ["Ooh la la — dinner is ready.", "The bistro is open.", "Tonight, très magnifique.", "Paris can wait — eat first."],
+    Greek:      ["Mediterranean magic tonight.", "Opa — dinner is served.", "The Aegean is calling."],
+    Spanish:    ["Tapas hour starts now.", "The sun always shines over dinner.", "Olé — you're cooking tonight."],
+    British:    ["Proper dinner tonight.", "Tea after. Dinner first.", "The classics never lie."],
+    Irish:      ["Cosy and hearty — just right.", "A proper Irish spread awaits."],
+    Caribbean:  ["Island time starts at dinner.", "Bring the warmth to the table.", "Sun-soaked flavours tonight."],
+    Moroccan:   ["A thousand spices, one plate.", "The souk is calling.", "North Africa on your table."],
+    Vietnamese: ["Fresh, bright, and calling your name.", "Pho-nomenal evening ahead.", "Hanoi vibes tonight."],
+    Portuguese: ["Salt air and good food tonight.", "Lisbon's finest — in your kitchen."],
+    Filipino:   ["Mabuhay — dinner is ready.", "The islands delivered tonight."],
+    Turkish:    ["Bosphorus on a plate.", "Istanbul flavours, your table tonight."],
+    // Tag-specific (checked if no cuisine match)
+    breakfast:  ["Rise and shine — breakfast is calling.", "A proper morning starts here.", "Best reason to get out of bed.", "The pan is hot and ready."],
+    vegetarian: ["Your garden called — dinner is ready.", "Plant-based perfection awaits.", "Going green never tasted this good.", "Vegetables stole the show."],
+    dessert:    ["Save room. You'll want to.", "Something sweet is calling your name.", "Life's too short to skip dessert.", "End on a high note tonight."],
+    protein:    ["Something hearty is on the menu.", "Feed the hunger properly tonight.", "Fuel up — this one delivers."],
+    // Generic fallback
+    _default:   [
+      "Dinner just got interesting.",
+      "Your kitchen is ready when you are.",
+      "Tonight's the night for this one.",
+      "Something good is on the menu.",
+      "Open the fridge. Start here.",
+      "You had me at dinner.",
+      "No reservations required.",
+      "The best table in the house.",
+      "Cook first, question later.",
+      "This one's worth it.",
+    ],
+  };
+
+  // Deterministic hash of recipe id → stable per recipe, varied across recipes
+  const hash = Math.abs(r.id.split('').reduce((a, c) => (Math.imul(a, 31) + c.charCodeAt(0)) | 0, 0));
+
+  // Try cuisine first, then first tag, then default
+  const pool =
+    POOLS[r.cuisine] ||
+    (r.tags || []).reduce((found, t) => found || POOLS[t], null) ||
+    POOLS._default;
+
+  // Title-based variant: 20% chance to use "{FirstWord} is calling."
+  if (hash % 5 === 0) {
+    const first = r.title.split(/\s+/)[0];
+    if (first && first.length > 2) return `${first} is calling.`;
+  }
+
+  return pool[hash % pool.length];
+}
+
+// ─────────────────────────────────────────────────────────────
 // Onboarding — 3 steps (welcome, name, chat)
 // ─────────────────────────────────────────────────────────────
 function Onboarding({ onFinish, p, initialName = '' }) {
@@ -483,66 +544,96 @@ function MicButton({ phase, onClick, p }) {
 }
 
 function OnboardingWelcome({ p, onNext }) {
+  const [slide, setSlide] = useState1(0);
+
+  const SLIDES = [
+    {
+      kicker: 'Sound familiar?',
+      icon: 'pantry',
+      headline: <>Full fridge,<br />no idea what<br />to cook.</>,
+      body: 'You buy groceries, use half, and watch the rest go off. Every week, on repeat.',
+    },
+    {
+      kicker: 'Here\'s how it works',
+      icon: 'mic',
+      headline: <>Talk through<br />what you have.</>,
+      body: 'Wander your kitchen and say what you see. Pal logs every shelf, every half-bag — then matches real recipes to your actual pantry.',
+    },
+    {
+      kicker: 'Ready?',
+      icon: 'chef',
+      headline: <>Up and running<br />in 60 seconds.</>,
+      body: 'No scanning. No typing. Just talk — and Pal will build your kitchen from scratch.',
+    },
+  ];
+
+  const s = SLIDES[slide];
+  const isLast = slide === SLIDES.length - 1;
+
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      background: p.paper, padding: '0 24px',
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: p.paper, padding: '0 24px', overflow: 'hidden' }}>
+
+      {/* Dot progress */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 6, paddingTop: 58, paddingBottom: 8 }}>
+        {SLIDES.map((_, i) => (
+          <div key={i} style={{
+            height: 5, borderRadius: 999,
+            width: i === slide ? 22 : 6,
+            background: i === slide ? p.accent : p.line,
+            transition: 'width 0.3s ease, background 0.3s ease',
+          }} />
+        ))}
+      </div>
+
+      {/* Slide content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start' }}>
         <div style={{
-          width: 60, height: 60, borderRadius: 20, background: p.accent,
+          width: 64, height: 64, borderRadius: 22, background: p.accent,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: p.accentInk, marginBottom: 28,
+          color: p.accentInk, marginBottom: 30,
           boxShadow: `0 12px 32px ${p.accent}40`,
         }}>
-          <Icon name="chef" size={30} strokeWidth={1.8} />
+          <Icon name={s.icon} size={30} strokeWidth={1.8} />
         </div>
+
         <div style={{
           fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
           color: p.accent, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600,
-          marginBottom: 12,
-        }}>Pantry Pal</div>
+          marginBottom: 14,
+        }}>{s.kicker}</div>
+
         <h1 style={{
           margin: 0, fontFamily: '"Newsreader", Georgia, serif',
-          fontSize: 40, fontWeight: 400, color: p.ink,
-          lineHeight: 1.02, letterSpacing: -0.8, textWrap: 'pretty',
+          fontSize: 42, fontWeight: 400, color: p.ink,
+          lineHeight: 1.0, letterSpacing: -0.8,
         }}>
-          Cook from what<br/>you already <em style={{ fontStyle: 'italic', color: p.accent }}>have.</em>
+          {s.headline}
         </h1>
-        <p style={{
-          margin: '20px 0 0', fontFamily: '"DM Sans", system-ui',
-          fontSize: 16, color: p.inkSoft, lineHeight: 1.45,
-          maxWidth: 320, textWrap: 'pretty',
-        }}>
-          Just talk to Pal as you wander your kitchen. We'll catch every shelf, every half-bag — then suggest real recipes that use it up before it goes off.
-        </p>
 
-        <div style={{
-          marginTop: 26, display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 14px', borderRadius: 12, background: p.surface,
-          border: `1px solid ${p.line}`, maxWidth: 320,
+        <p style={{
+          margin: '22px 0 0', fontFamily: '"DM Sans", system-ui',
+          fontSize: 16, color: p.inkSoft, lineHeight: 1.5,
+          maxWidth: 300, textWrap: 'pretty',
         }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 999, background: p.accent + '18',
-            color: p.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-            <Icon name="mic" size={16} strokeWidth={1.8} />
-          </div>
-          <div style={{
-            fontFamily: '"DM Sans", system-ui', fontSize: 13, color: p.inkSoft, lineHeight: 1.35,
-          }}>
-            <span style={{ color: p.ink, fontWeight: 600 }}>Setup takes a minute.</span> Just talk — no forms, no scanning, no typing.
-          </div>
-        </div>
+          {s.body}
+        </p>
       </div>
-      <div style={{ padding: '0 0 36px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <BigButton fullWidth p={p} onClick={onNext} icon="mic">Start by talking</BigButton>
-        <button style={{
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: p.inkSoft, fontFamily: '"DM Sans", system-ui', fontSize: 14,
-          padding: 8,
-        }}>I already have an account</button>
+
+      {/* Bottom actions */}
+      <div style={{ padding: '0 0 38px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <BigButton fullWidth p={p}
+          onClick={isLast ? onNext : () => setSlide(slide + 1)}
+          icon={isLast ? 'mic' : null}
+        >
+          {isLast ? "Let's go" : 'Next →'}
+        </BigButton>
+
+        {slide > 0 && (
+          <button style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: p.inkSoft, fontFamily: '"DM Sans", system-ui', fontSize: 14, padding: 8,
+          }} onClick={() => setSlide(slide - 1)}>← Back</button>
+        )}
       </div>
     </div>
   );
@@ -981,7 +1072,7 @@ function HomeTodaysPick({ p, t, data, pantryIds, navigate, cookedDays, onGrocery
 
       <GroceryCard p={p} onClick={onGrocery} />
 
-      <SectionHeader kicker="Tonight's pick" title="Charred carrots are calling." p={p} />
+      <SectionHeader kicker="Tonight's pick" title={recipeCallout(hero.r)} p={p} />
       <div style={{ padding: '0 18px 22px' }}>
         <button onClick={() => navigate('recipe', hero.r.id)} style={{
           width: '100%', padding: 0, border: 'none', background: 'transparent',

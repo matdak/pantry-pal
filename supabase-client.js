@@ -338,6 +338,63 @@
     return '';
   }
 
+  // ── Saved recipes ────────────────────────────────────────────────────
+  async function getSavedRecipes() {
+    const { data, error } = await sb.from('saved_recipes').select('recipe_id, saved_at').order('saved_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => r.recipe_id);
+  }
+
+  async function saveRecipe(recipeId) {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) throw new Error('Not signed in');
+    const { error } = await sb.from('saved_recipes').insert({ user_id: user.id, recipe_id: recipeId });
+    if (error && error.code !== '23505') throw error; // ignore duplicate
+  }
+
+  async function unsaveRecipe(recipeId) {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) throw new Error('Not signed in');
+    const { error } = await sb.from('saved_recipes').delete().eq('user_id', user.id).eq('recipe_id', recipeId);
+    if (error) throw error;
+  }
+
+  // ── Shopping list ─────────────────────────────────────────────────────
+  async function getShoppingList() {
+    const { data, error } = await sb
+      .from('shopping_list_items')
+      .select('id, ingredient_id, qty, checked, added_at, ingredients(id, name, category)')
+      .order('added_at', { ascending: true });
+    if (error) throw error;
+    return data.map(it => ({
+      id: it.id,
+      ingredient_id: it.ingredient_id,
+      name: it.ingredients?.name || it.ingredient_id,
+      cat: it.ingredients?.category || 'Other',
+      qty: it.qty,
+      checked: it.checked,
+    }));
+  }
+
+  async function addShoppingItems(ingredientIds) {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) throw new Error('Not signed in');
+    const rows = ingredientIds.map(id => ({ user_id: user.id, ingredient_id: id }));
+    const { error } = await sb.from('shopping_list_items').insert(rows).select();
+    if (error) throw error;
+    return getShoppingList();
+  }
+
+  async function toggleShoppingItem(id, checked) {
+    const { error } = await sb.from('shopping_list_items').update({ checked }).eq('id', id);
+    if (error) throw error;
+  }
+
+  async function removeShoppingItem(id) {
+    const { error } = await sb.from('shopping_list_items').delete().eq('id', id);
+    if (error) throw error;
+  }
+
   // ── Auth ───────────────────────────────────────────────────────────────
   async function signUp(email, password, name) {
     const { data, error } = await sb.auth.signUp({
@@ -375,6 +432,8 @@
     getRecipes, getPantry, addPantryItems, removePantryItem,
     getProfile, updateProfile,
     cookCompleted, getCookStats,
+    getSavedRecipes, saveRecipe, unsaveRecipe,
+    getShoppingList, addShoppingItems, toggleShoppingItem, removeShoppingItem,
     startRecording, transcribe,
     signUp, signIn, signInWithGoogle, signOut, onAuthChange,
   };

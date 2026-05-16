@@ -125,7 +125,7 @@ function BrowseScreen({ p, t, data, pantryIds, navigate }) {
 // ─────────────────────────────────────────────────────────────
 // Recipe Detail
 // ─────────────────────────────────────────────────────────────
-function RecipeDetailScreen({ p, t, data, pantryIds, recipeId, navigate, onCook }) {
+function RecipeDetailScreen({ p, t, data, pantryIds, recipeId, navigate, onCook, onAddToShoppingList, onAddOneToShoppingList, saved, onToggleSave }) {
   const recipe = data.recipes.find(r => r.id === recipeId) || data.recipes[0];
   const match = calcMatch(recipe, pantryIds);
   const [scrolled, setScrolled] = useState2(false);
@@ -152,13 +152,14 @@ function RecipeDetailScreen({ p, t, data, pantryIds, recipeId, navigate, onCook 
         }}>
           <Icon name="chevronLeft" size={20} stroke={p.ink} strokeWidth={2} />
         </button>
-        <button style={{
+        <button onClick={() => onToggleSave && onToggleSave(recipe.id)} style={{
           position: 'absolute', top: 14, right: 14,
           width: 40, height: 40, borderRadius: 999,
-          background: 'rgba(255,255,255,0.94)', border: 'none', cursor: 'pointer',
+          background: saved ? p.accent : 'rgba(255,255,255,0.94)',
+          border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Icon name="star" size={18} stroke={p.ink} strokeWidth={1.8} />
+          <Icon name="star" size={18} stroke={saved ? p.accentInk : p.ink} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -198,12 +199,13 @@ function RecipeDetailScreen({ p, t, data, pantryIds, recipeId, navigate, onCook 
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {recipe.ingredients.map((ing, i) => (
-            <IngredientRow key={i} ing={ing} have={pantryIds.has(ing.id)} p={p} data={data} />
+            <IngredientRow key={i} ing={ing} have={pantryIds.has(ing.id)} p={p} data={data}
+              onAdd={!pantryIds.has(ing.id) && onAddOneToShoppingList ? () => onAddOneToShoppingList(ing.id) : null} />
           ))}
         </div>
 
-        {missIng.length > 0 && (
-          <button onClick={() => navigate('shopping')} style={{
+        {missIng.length > 0 && onAddToShoppingList && (
+          <button onClick={() => onAddToShoppingList(missIng.map(i => i.id))} style={{
             marginTop: 14, width: '100%', display: 'flex', alignItems: 'center', gap: 10,
             padding: '12px 14px', borderRadius: 12, border: `1px dashed ${p.accent}80`,
             background: p.accent + '0c', color: p.ink, cursor: 'pointer', textAlign: 'left',
@@ -269,7 +271,8 @@ function Stat({ icon, label, value, p }) {
   );
 }
 
-function IngredientRow({ ing, have, p, data }) {
+function IngredientRow({ ing, have, p, data, onAdd }) {
+  const [added, setAdded] = useState2(false);
   const fromPantry = data.pantry.find(i => i.id === ing.id);
   return (
     <div style={{
@@ -301,6 +304,17 @@ function IngredientRow({ ing, have, p, data }) {
         fontFamily: '"JetBrains Mono", monospace', fontSize: 12,
         color: have ? p.inkSoft : p.inkFaint, fontWeight: 500,
       }}>{ing.amt}</span>
+      {!have && onAdd && (
+        <button onClick={() => { setAdded(true); onAdd(); }} style={{
+          width: 28, height: 28, borderRadius: 999, border: 'none', cursor: added ? 'default' : 'pointer',
+          background: added ? p.accent : p.surface,
+          color: added ? p.accentInk : p.inkSoft,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          transition: 'background 0.2s, color 0.2s',
+        }}>
+          <Icon name={added ? 'check' : 'cart'} size={13} strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }
@@ -308,11 +322,12 @@ function IngredientRow({ ing, have, p, data }) {
 // ─────────────────────────────────────────────────────────────
 // Cook-along — step-by-step
 // ─────────────────────────────────────────────────────────────
-function CookScreen({ p, data, recipeId, navigate, onFinish }) {
+function CookScreen({ p, data, recipeId, navigate, onCookComplete, onDismiss }) {
   const recipe = data.recipes.find(r => r.id === recipeId) || data.recipes[0];
   const [step, setStep] = useState2(0);
   const [running, setRunning] = useState2(false);
   const [remaining, setRemaining] = useState2(recipe.steps[0].dur);
+  const [done, setDone] = useState2(false);
 
   useEffect2(() => {
     setRemaining(recipe.steps[step].dur);
@@ -433,7 +448,7 @@ function CookScreen({ p, data, recipeId, navigate, onFinish }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}><Icon name="chevronLeft" size={22} strokeWidth={1.8} /></button>
         {isLast ? (
-          <BigButton fullWidth p={p} onClick={() => { onFinish(recipe.id); navigate('home'); }} icon="check">
+          <BigButton fullWidth p={p} onClick={() => { onCookComplete && onCookComplete(recipe.id); setDone(true); }} icon="check">
             Done — I cooked it!
           </BigButton>
         ) : (
@@ -442,42 +457,158 @@ function CookScreen({ p, data, recipeId, navigate, onFinish }) {
           </BigButton>
         )}
       </div>
+
+      {done && <BonAppetit p={p} recipe={recipe} onDismiss={onDismiss} />}
     </div>
+  );
+}
+
+function BonAppetit({ p, recipe, onDismiss }) {
+  const CONFETTI = [
+    { color: '#E07B54', x: 12, delay: 0,    dur: 2.4 },
+    { color: '#F9C74F', x: 28, delay: 0.3,  dur: 2.1 },
+    { color: '#90BE6D', x: 48, delay: 0.1,  dur: 2.7 },
+    { color: '#577590', x: 65, delay: 0.5,  dur: 2.2 },
+    { color: '#F3722C', x: 80, delay: 0.2,  dur: 2.5 },
+    { color: '#43AA8B', x: 20, delay: 0.7,  dur: 2.0 },
+    { color: '#F8961E', x: 55, delay: 0.4,  dur: 2.8 },
+    { color: '#277DA1', x: 88, delay: 0.6,  dur: 2.3 },
+    { color: '#E07B54', x: 38, delay: 0.15, dur: 2.6 },
+    { color: '#F9C74F', x: 72, delay: 0.45, dur: 2.1 },
+  ];
+
+  return (
+    <>
+      <style>{`
+        @keyframes confettiFall {
+          0%   { transform: translateY(-10px) rotate(0deg);   opacity: 1; }
+          100% { transform: translateY(120vh) rotate(600deg); opacity: 0; }
+        }
+        @keyframes chefFloat {
+          0%, 100% { transform: translateY(0px) rotate(-3deg) scale(1); }
+          50%       { transform: translateY(-22px) rotate(3deg) scale(1.05); }
+        }
+        @keyframes bonFadeUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes starPop {
+          0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
+          60%  { transform: scale(1.2) rotate(8deg);  opacity: 1; }
+          100% { transform: scale(1) rotate(0deg);   opacity: 1; }
+        }
+      `}</style>
+
+      {/* Confetti layer */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        {CONFETTI.map((c, i) => (
+          <div key={i} style={{
+            position: 'absolute', top: -16, left: `${c.x}%`,
+            width: 10, height: 10, borderRadius: i % 2 === 0 ? 999 : 2,
+            background: c.color,
+            animation: `confettiFall ${c.dur}s ${c.delay}s ease-in infinite`,
+          }} />
+        ))}
+      </div>
+
+      {/* Screen */}
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 10,
+        background: p.paper,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: '40px 28px',
+        overflow: 'hidden',
+      }}>
+
+        {/* Chef */}
+        <div style={{ animation: 'chefFloat 2.6s ease-in-out infinite', marginBottom: 28 }}>
+          <svg width="140" height="160" viewBox="0 0 140 160" fill="none">
+            {/* Toque */}
+            <ellipse cx="70" cy="38" rx="28" ry="26" fill="white" stroke="#E8E0D8" strokeWidth="1.5"/>
+            <ellipse cx="70" cy="62" rx="36" ry="10" fill="white" stroke="#E8E0D8" strokeWidth="1.5"/>
+            <rect x="34" y="60" width="72" height="8" rx="2" fill="white"/>
+            {/* Hat band */}
+            <rect x="34" y="64" width="72" height="5" rx="2" fill="#E8E0D8"/>
+            {/* Face */}
+            <circle cx="70" cy="90" r="28" fill="#FDDBB4"/>
+            {/* Cheeks */}
+            <ellipse cx="56" cy="95" rx="8" ry="5" fill="#F4A27A" opacity="0.45"/>
+            <ellipse cx="84" cy="95" rx="8" ry="5" fill="#F4A27A" opacity="0.45"/>
+            {/* Eyes — happy squint */}
+            <path d="M 60 85 Q 64 82 68 85" stroke="#5C3D2E" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+            <path d="M 72 85 Q 76 82 80 85" stroke="#5C3D2E" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+            {/* Smile */}
+            <path d="M 58 97 Q 70 110 82 97" stroke="#5C3D2E" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+            {/* Body */}
+            <rect x="42" y="114" width="56" height="44" rx="12" fill="white" stroke="#E8E0D8" strokeWidth="1.5"/>
+            {/* Coat buttons */}
+            <circle cx="70" cy="126" r="2.5" fill="#E8E0D8"/>
+            <circle cx="70" cy="138" r="2.5" fill="#E8E0D8"/>
+            <circle cx="70" cy="150" r="2.5" fill="#E8E0D8"/>
+            {/* Left arm raised */}
+            <rect x="20" y="106" width="26" height="12" rx="6" fill="white" stroke="#E8E0D8" strokeWidth="1.5" transform="rotate(-50 20 106)"/>
+            {/* Right arm raised */}
+            <rect x="94" y="106" width="26" height="12" rx="6" fill="white" stroke="#E8E0D8" strokeWidth="1.5" transform="rotate(50 120 106)"/>
+            {/* Hands */}
+            <circle cx="16" cy="95" r="9" fill="#FDDBB4"/>
+            <circle cx="124" cy="95" r="9" fill="#FDDBB4"/>
+            {/* Stars in hands */}
+            <text x="10" y="100" fontSize="13">⭐</text>
+            <text x="118" y="100" fontSize="13">⭐</text>
+          </svg>
+        </div>
+
+        {/* Text */}
+        <div style={{
+          fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+          color: p.accent, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 600,
+          animation: 'bonFadeUp 0.5s 0.1s both',
+          marginBottom: 10,
+        }}>You did it</div>
+
+        <h1 style={{
+          margin: 0,
+          fontFamily: '"Newsreader", Georgia, serif',
+          fontSize: 52, fontWeight: 400, color: p.ink,
+          letterSpacing: -1.5, lineHeight: 1.0, textAlign: 'center',
+          animation: 'bonFadeUp 0.5s 0.2s both',
+        }}>Bon appétit!</h1>
+
+        <p style={{
+          margin: '14px 0 0',
+          fontFamily: '"DM Sans", system-ui', fontSize: 16,
+          color: p.inkSoft, textAlign: 'center', lineHeight: 1.45,
+          animation: 'bonFadeUp 0.5s 0.3s both',
+          maxWidth: 260,
+        }}>{recipe.title} added to your cooking history.</p>
+
+        <div style={{ marginTop: 40, width: '100%', animation: 'bonFadeUp 0.5s 0.45s both' }}>
+          <BigButton fullWidth p={p} onClick={onDismiss} icon="home">
+            Back to home
+          </BigButton>
+        </div>
+      </div>
+    </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
 // Shopping list
 // ─────────────────────────────────────────────────────────────
-function ShoppingScreen({ p, data, pantryIds, navigate }) {
-  // collect missing ingredients across all "considered" (high-match) recipes
-  const items = useMemo2(() => {
-    const map = {};
-    data.recipes.forEach(r => {
-      r.ingredients.forEach(ing => {
-        if (!pantryIds.has(ing.id) && !ing.have) {
-          if (!map[ing.id]) {
-            map[ing.id] = {
-              id: ing.id, name: ing.name || ing.id, amt: ing.amt,
-              recipes: [], cat: guessCat(ing.id),
-            };
-          }
-          map[ing.id].recipes.push(r.title);
-        }
-      });
-    });
-    return Object.values(map);
-  }, [data, pantryIds]);
-  const [checked, setChecked] = useState2(new Set());
+function ShoppingScreen({ p, navigate, shoppingList = [], onToggle, onRemove }) {
+  const grouped = shoppingList.reduce((g, it) => {
+    const cat = it.cat || 'Other';
+    (g[cat] = g[cat] || []).push(it);
+    return g;
+  }, {});
 
-  const grouped = items.reduce((g, i) => { (g[i.cat] = g[i.cat] || []).push(i); return g; }, {});
+  const isEmpty = shoppingList.length === 0;
 
   return (
     <div style={{ paddingBottom: 120 }}>
-      <div style={{
-        padding: '20px 18px 14px', display: 'flex', alignItems: 'center', gap: 14,
-      }}>
-        <button onClick={() => navigate('home')} style={{
+      <div style={{ padding: '20px 18px 14px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button onClick={() => navigate('back')} style={{
           width: 36, height: 36, borderRadius: 999, background: p.surface,
           border: `1px solid ${p.line}`, color: p.ink, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -486,7 +617,7 @@ function ShoppingScreen({ p, data, pantryIds, navigate }) {
           <div style={{
             fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
             color: p.accent, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600,
-          }}>Shopping list · {items.length} items</div>
+          }}>Shopping list{!isEmpty && ` · ${shoppingList.length} items`}</div>
           <div style={{
             fontFamily: '"Newsreader", Georgia, serif', fontSize: 28,
             fontWeight: 400, color: p.ink, letterSpacing: -0.4, marginTop: 2,
@@ -494,78 +625,76 @@ function ShoppingScreen({ p, data, pantryIds, navigate }) {
         </div>
       </div>
 
-      <div style={{ padding: '0 18px 14px', display: 'flex', gap: 8 }}>
-        <button style={{
-          flex: 1, padding: '14px 16px', borderRadius: 14, border: 'none',
-          background: p.ink, color: p.paper, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          fontFamily: '"DM Sans", system-ui', fontSize: 14, fontWeight: 600,
+      {isEmpty ? (
+        <div style={{
+          margin: '60px 24px 0', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', textAlign: 'center', gap: 12,
         }}>
-          <Icon name="cart" size={16} strokeWidth={1.8} />
-          Send to Instacart
-        </button>
-        <button style={{
-          padding: '14px 16px', borderRadius: 14, border: `1px solid ${p.line}`,
-          background: p.surface, color: p.ink, cursor: 'pointer',
-          fontFamily: '"DM Sans", system-ui', fontSize: 14, fontWeight: 600,
-        }}>Share</button>
-      </div>
-
-      {Object.entries(grouped).map(([cat, items]) => (
-        <div key={cat} style={{ marginBottom: 18 }}>
           <div style={{
-            padding: '0 18px 8px', fontFamily: '"JetBrains Mono", monospace',
-            fontSize: 10, color: p.inkFaint, textTransform: 'uppercase',
-            letterSpacing: 1.5, fontWeight: 600,
-          }}>{cat}</div>
-          <div style={{
-            margin: '0 18px', borderRadius: 16, background: p.surface,
-            border: `1px solid ${p.line}`, overflow: 'hidden',
+            width: 56, height: 56, borderRadius: 18, background: p.surface,
+            border: `1px solid ${p.line}`, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', color: p.inkFaint,
           }}>
-            {items.map((it, i) => {
-              const isChecked = checked.has(it.id);
-              return (
-                <button key={it.id} onClick={() => {
-                  const n = new Set(checked);
-                  isChecked ? n.delete(it.id) : n.add(it.id);
-                  setChecked(n);
-                }} style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px', border: 'none', background: 'transparent',
-                  borderTop: i === 0 ? 'none' : `1px solid ${p.line}`,
-                  cursor: 'pointer', textAlign: 'left',
-                }}>
-                  <div style={{
-                    width: 22, height: 22, borderRadius: 999,
-                    background: isChecked ? p.accent : 'transparent',
-                    border: isChecked ? 'none' : `1.5px solid ${p.line}`,
-                    color: p.accentInk,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0,
-                  }}>
-                    {isChecked && <Icon name="check" size={13} strokeWidth={2.5} />}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontFamily: '"DM Sans", system-ui', fontSize: 15, fontWeight: 500,
-                      color: isChecked ? p.inkFaint : p.ink,
-                      textDecoration: isChecked ? 'line-through' : 'none',
-                    }}>{it.name}</div>
-                    <div style={{
-                      fontFamily: '"DM Sans", system-ui', fontSize: 12, color: p.inkSoft,
-                      marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>for {it.recipes.slice(0, 2).join(', ')}{it.recipes.length > 2 && ` +${it.recipes.length - 2}`}</div>
-                  </div>
-                  <span style={{
-                    fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
-                    color: p.inkSoft, flexShrink: 0,
-                  }}>{it.amt}</span>
-                </button>
-              );
-            })}
+            <Icon name="cart" size={24} strokeWidth={1.5} />
+          </div>
+          <div style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: 22, fontWeight: 400, color: p.ink }}>Nothing here yet</div>
+          <div style={{ fontFamily: '"DM Sans", system-ui', fontSize: 15, color: p.inkSoft, maxWidth: 260, lineHeight: 1.5 }}>
+            Open a recipe and tap "Add missing ingredients" to build your list.
           </div>
         </div>
-      ))}
+      ) : (
+        <>
+          {Object.entries(grouped).map(([cat, items]) => (
+            <div key={cat} style={{ marginBottom: 18 }}>
+              <div style={{
+                padding: '0 18px 8px', fontFamily: '"JetBrains Mono", monospace',
+                fontSize: 10, color: p.inkFaint, textTransform: 'uppercase',
+                letterSpacing: 1.5, fontWeight: 600,
+              }}>{cat}</div>
+              <div style={{
+                margin: '0 18px', borderRadius: 16, background: p.surface,
+                border: `1px solid ${p.line}`, overflow: 'hidden',
+              }}>
+                {items.map((it, i) => (
+                  <div key={it.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px 14px',
+                    borderTop: i === 0 ? 'none' : `1px solid ${p.line}`,
+                  }}>
+                    <button onClick={() => onToggle(it.id, !it.checked)} style={{
+                      width: 22, height: 22, borderRadius: 999, flexShrink: 0,
+                      background: it.checked ? p.accent : 'transparent',
+                      border: it.checked ? 'none' : `1.5px solid ${p.line}`,
+                      color: p.accentInk, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {it.checked && <Icon name="check" size={13} strokeWidth={2.5} />}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: '"DM Sans", system-ui', fontSize: 15, fontWeight: 500,
+                        color: it.checked ? p.inkFaint : p.ink,
+                        textDecoration: it.checked ? 'line-through' : 'none',
+                      }}>{it.name}</div>
+                      {it.qty && <div style={{
+                        fontFamily: '"DM Sans", system-ui', fontSize: 12,
+                        color: p.inkSoft, marginTop: 1,
+                      }}>{it.qty}</div>}
+                    </div>
+                    <button onClick={() => onRemove(it.id)} style={{
+                      width: 28, height: 28, borderRadius: 999, border: 'none',
+                      background: 'transparent', color: p.inkFaint, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Icon name="x" size={14} strokeWidth={2} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -620,8 +749,8 @@ function ProfileScreen({ p, data, profile, onShop, navigate }) {
         onClick={onShop} p={p} />
 
       <ProfileTile icon="book" title="Saved recipes"
-        sub={data.user.savedCount ? `${data.user.savedCount} favorites` : 'Nothing saved yet'}
-        onClick={() => {}} p={p} />
+        sub={data.user.savedCount ? `${data.user.savedCount} saved` : 'Nothing saved yet'}
+        onClick={() => navigate('saved-recipes')} p={p} />
 
       <ProfileTile icon="leaf" title="Cooking history"
         sub={data.user.totalCooked ? `${data.user.totalCooked} recipes cooked` : 'No cooks yet'}
@@ -630,12 +759,9 @@ function ProfileScreen({ p, data, profile, onShop, navigate }) {
       <div style={{ height: 10 }} />
 
       <div style={{ margin: '0 18px', borderRadius: 14, background: p.surface, border: `1px solid ${p.line}`, overflow: 'hidden' }}>
-        <ProfileRow icon="sparkle" label="Preferences & taste" detail={prefSummary}
+        <ProfileRow icon="sparkle" label="Preferences" detail={prefSummary}
           onClick={() => navigate('settings')} p={p} first />
-        <ProfileRow icon="bell" label="Notifications" detail="Off" onClick={() => {}} p={p} />
-        <ProfileRow icon="fridge" label="Connected appliances" detail="None" onClick={() => {}} p={p} />
-        <ProfileRow icon="cart" label="Grocery integrations" detail="None" onClick={() => {}} p={p} />
-        <ProfileRow icon="profile" label="Account" detail="" onClick={() => {}} p={p} last />
+        <ProfileRow icon="cart" label="Grocery integrations" detail="None" onClick={() => navigate('grocery-integrations')} p={p} last />
       </div>
 
       <div style={{ padding: '18px 18px 0', textAlign: 'center' }}>
@@ -803,4 +929,134 @@ function PrefSection({ title, children, p }) {
   );
 }
 
-Object.assign(window, { BrowseScreen, RecipeDetailScreen, CookScreen, ShoppingScreen, ProfileScreen, SettingsScreen });
+function SavedRecipesScreen({ p, t, data, pantryIds, savedSet, navigate }) {
+  const saved = data.recipes.filter(r => savedSet.has(r.id));
+
+  return (
+    <div style={{ paddingBottom: 120 }}>
+      <div style={{ padding: '20px 18px 14px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button onClick={() => navigate('back')} style={{
+          width: 36, height: 36, borderRadius: 999, background: p.surface,
+          border: `1px solid ${p.line}`, color: p.ink, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}><Icon name="chevronLeft" size={18} strokeWidth={2} /></button>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+            color: p.accent, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600,
+          }}>Saved{saved.length > 0 && ` · ${saved.length}`}</div>
+          <div style={{
+            fontFamily: '"Newsreader", Georgia, serif', fontSize: 28,
+            fontWeight: 400, color: p.ink, letterSpacing: -0.4, marginTop: 2,
+          }}>Your recipes</div>
+        </div>
+      </div>
+
+      {saved.length === 0 ? (
+        <div style={{
+          margin: '60px 24px 0', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', textAlign: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 18, background: p.surface,
+            border: `1px solid ${p.line}`, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', color: p.inkFaint,
+          }}>
+            <Icon name="star" size={24} strokeWidth={1.5} />
+          </div>
+          <div style={{ fontFamily: '"Newsreader", Georgia, serif', fontSize: 22, fontWeight: 400, color: p.ink }}>Nothing saved yet</div>
+          <div style={{ fontFamily: '"DM Sans", system-ui', fontSize: 15, color: p.inkSoft, maxWidth: 260, lineHeight: 1.5 }}>
+            Tap the star on any recipe to save it here.
+          </div>
+        </div>
+      ) : (
+        <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {saved.map(r => {
+            const m = calcMatch(r, pantryIds);
+            return <RecipeCard key={r.id} recipe={r} match={m} layout="list"
+              matchStyle={t?.matchStyle || 'percent'} p={p}
+              onClick={() => navigate('recipe', r.id)} />;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroceryIntegrationsScreen({ p, navigate }) {
+  const INTEGRATIONS = [
+    { name: 'Postmates', src: 'assets/postmates.png' },
+    { name: 'Uber Eats', src: 'assets/ubereats.png' },
+    { name: 'DoorDash',  src: 'assets/doordash.webp' },
+    { name: 'Instacart', src: 'assets/instacart.png' },
+  ];
+  const [tapped, setTapped] = useState2(null);
+
+  const handleTap = (name) => {
+    setTapped(name);
+    setTimeout(() => setTapped(t => t === name ? null : t), 2800);
+  };
+
+  return (
+    <div style={{ paddingBottom: 120, position: 'relative' }}>
+      <style>{`
+        @keyframes toastUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      <div style={{ padding: '20px 18px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button onClick={() => navigate('back')} style={{
+          width: 36, height: 36, borderRadius: 999, background: p.surface,
+          border: `1px solid ${p.line}`, color: p.ink, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}><Icon name="chevronLeft" size={18} strokeWidth={2} /></button>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
+            color: p.accent, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600,
+          }}>Integrations</div>
+          <div style={{
+            fontFamily: '"Newsreader", Georgia, serif', fontSize: 28,
+            fontWeight: 400, color: p.ink, letterSpacing: -0.4, marginTop: 2,
+          }}>Grocery delivery</div>
+        </div>
+      </div>
+
+      <div style={{ padding: '0 18px 20px', fontFamily: '"DM Sans", system-ui', fontSize: 15, color: p.inkSoft, lineHeight: 1.5 }}>
+        Connect a delivery app to order missing ingredients straight from your shopping list.
+      </div>
+
+      <div style={{ padding: '0 18px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {INTEGRATIONS.map(({ name, src }) => (
+          <div key={name} onClick={() => handleTap(name)} style={{
+            borderRadius: 20, overflow: 'hidden',
+            aspectRatio: '1 / 1', cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+            transform: tapped === name ? 'scale(0.96)' : 'scale(1)',
+            transition: 'transform 0.15s ease',
+          }}>
+            <img src={src} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </div>
+        ))}
+      </div>
+
+      {tapped && (
+        <div style={{
+          position: 'fixed', bottom: 100, left: '50%', transform: 'translateX(-50%)',
+          background: p.ink, color: p.paper, borderRadius: 12,
+          padding: '10px 18px', whiteSpace: 'nowrap',
+          fontFamily: '"DM Sans", system-ui', fontSize: 13, fontWeight: 500,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+          animation: 'toastUp 0.2s ease both',
+          zIndex: 100,
+        }}>
+          🚧 This is a fake door test
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { BrowseScreen, RecipeDetailScreen, CookScreen, ShoppingScreen, ProfileScreen, SettingsScreen, GroceryIntegrationsScreen, SavedRecipesScreen });
